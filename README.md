@@ -29,7 +29,7 @@ Writes a patrol log file to `BepInEx/` after each mission, and upgrades the in-g
 
 Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubber-banding and desync in multiplayer.
 
-**Install on:** host **and** all clients.
+**Install on:** host (required); clients (optional).
 
 ---
 
