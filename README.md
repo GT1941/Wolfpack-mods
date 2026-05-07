@@ -1,6 +1,6 @@
 # Wolfpack BepInEx Mods
 
-Three mods for [Wolfpack](https://store.steampowered.com/app/1168840/Wolfpack/) (pre-beta, IL2CPP). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
+Three BepInEx mods for [Wolfpack](https://store.steampowered.com/app/1168840/Wolfpack/) (pre-beta, IL2CPP). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
 
 ---
 
@@ -19,15 +19,15 @@ Writes a patrol log file to `BepInEx/` after each mission, and upgrades the in-g
 - Upgrades timestamps from `HH:MM` to `HH:MM:SS` in the C-menu logbook
 
 **Notes:**
-- One patrol log file per boat per session, named `PatrolLog_U-96_2026-01-01_20-00-00.txt`
+- One patrol log file per boat per session, named e.g. `PatrolLog_U-96_2026-01-01_20-00-00.txt`
 - Timestamps use in-game time (HH:MM:SS)
-- Each player who installs the mod gets their own log and upgraded logbook; some events (ship sinkings, detection) may only fire on the host
+- Some patrol log events (ship sinkings, detection) may only fire on the host
 
 ---
 
-## GT-NetworkFix (WolfpackNetworkFix)
+## GT-NetworkFix
 
-Sets `W_NetworkManager.numIterations = 3` to reduce rubber-banding and desync in multiplayer.
+Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubber-banding and desync in multiplayer.
 
 **Install on:** host **and** all clients.
 
@@ -46,10 +46,24 @@ Scales: merchants, armed merchants, carriers, sloops, corvettes, destroyers, mer
 ## Installation
 
 1. Install [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx/releases) into the Wolfpack game folder
-2. Drop the `.dll` files into `BepInEx/plugins/`
+2. Drop the desired `.dll` files into `BepInEx/plugins/`
 3. Launch the game
+
+## Repository Structure
+
+```
+.
+├── GT-LogbookExport.dll
+├── GT-NetworkFix.dll
+├── GT-LargerConvoy.dll
+└── src/
+    ├── LogbookExport/
+    ├── WolfpackNetworkFix/
+    └── LargerConvoy/
+```
 
 ## Requirements
 
 - Wolfpack pre-beta (Unity 2020.3, IL2CPP)
 - BepInEx 6.0.0-be.697 or later
+- .NET 8 SDK (only if building from source)
