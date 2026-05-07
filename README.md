@@ -85,5 +85,5 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 ## Requirements
 
 - Wolfpack pre-beta (Unity 2020.3, IL2CPP)
-- BepInEx 6.0.0-be.697 or later
+- BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2 (the version these mods were built and tested against)
 - .NET 8 SDK (only if building from source)
