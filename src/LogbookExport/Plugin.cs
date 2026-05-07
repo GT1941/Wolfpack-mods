@@ -31,6 +31,7 @@ public class Plugin : BasePlugin
     {
         Plugin.Log = base.Log;
         new Harmony(MyPluginInfo.PLUGIN_GUID).PatchAll();
+        AddComponent<LogbookWatcher>();
         Log.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
     }
 
@@ -142,6 +143,43 @@ public class Plugin : BasePlugin
         WriteSummary();
         MissionActive = false;
         Entries.Clear();
+    }
+}
+
+// Watches all active uboats every frame and enhances HH:MM → HH:MM:SS
+class LogbookWatcher : MonoBehaviour
+{
+    void Update()
+    {
+        try
+        {
+            var gm = W_GameManager.instance;
+            if (gm?.uboats == null) return;
+            foreach (var uboat in gm.uboats)
+            {
+                if (uboat == null) continue;
+                string log = uboat.logBook ?? "";
+                if (log.Length < 6) continue;
+                string[] lines = log.Split('\n');
+                bool changed = false;
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string line = lines[i];
+                    // Match HH:MM format: pos 2=':', pos 5=' ' (not already HH:MM:SS)
+                    if (line.Length > 5 && line[2] == ':' && line[5] == ' ')
+                    {
+                        lines[i] = Plugin.GameTime() + line.Substring(5);
+                        changed = true;
+                    }
+                }
+                if (changed)
+                {
+                    uboat.logBook = string.Join("\n", lines);
+                    uboat.updateLogbook();
+                }
+            }
+        }
+        catch { }
     }
 }
 
