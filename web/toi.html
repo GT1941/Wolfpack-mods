@@ -22,9 +22,10 @@
     height: 100%;
   }
   .wrap {
-    max-width: 640px;
+    max-width: 520px;
     margin: 0 auto;
-    padding: 32px 20px;
+    padding: 40px 20px;
+    text-align: center;
   }
   h1 {
     margin: 0 0 4px 0;
@@ -37,10 +38,11 @@
   .status {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     font-size: 12px;
     color: var(--dim);
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
   .dot {
     width: 8px; height: 8px; border-radius: 50%;
@@ -52,7 +54,7 @@
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 20px;
+    padding: 28px 20px;
     margin-bottom: 16px;
   }
   .label {
@@ -60,25 +62,29 @@
     letter-spacing: 1.5px;
     text-transform: uppercase;
     color: var(--dim);
-    margin-bottom: 6px;
+    margin-bottom: 10px;
   }
   .big {
-    font-size: 48px;
+    font-size: 64px;
     font-variant-numeric: tabular-nums;
-    line-height: 1.1;
+    line-height: 1.0;
     color: var(--fg);
+    letter-spacing: 1px;
+  }
+  .big.huge {
+    font-size: 84px;
   }
   .big.amber { color: var(--amber); }
   .meta {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    margin-top: 14px;
-    padding-top: 14px;
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-top: 18px;
+    padding-top: 16px;
     border-top: 1px solid var(--line);
     font-size: 13px;
   }
-  .meta div .label { margin-bottom: 2px; }
+  .meta .label { margin-bottom: 2px; }
   .meta .v { color: var(--fg); font-variant-numeric: tabular-nums; }
   input[type=text] {
     width: 100%;
@@ -88,8 +94,9 @@
     border: 1px solid var(--line);
     border-radius: 3px;
     font-family: inherit;
-    font-size: 22px;
-    padding: 10px 12px;
+    font-size: 26px;
+    padding: 12px 14px;
+    text-align: center;
     outline: none;
   }
   input[type=text]:focus { border-color: var(--amber); }
@@ -105,7 +112,6 @@
   <div class="status">
     <span class="dot" id="dot"></span>
     <span id="conn">connecting…</span>
-    <span style="margin-left:auto" id="endpoint">http://127.0.0.1:1941/time</span>
   </div>
 
   <div class="panel" id="nowPanel">
@@ -114,19 +120,17 @@
     <div class="meta">
       <div><div class="label">Date</div><div class="v" id="date">—</div></div>
       <div><div class="label">Vessel</div><div class="v" id="vessel">—</div></div>
-      <div><div class="label">Convoy speed</div><div class="v" id="speed">—</div></div>
     </div>
   </div>
 
   <div class="panel">
-    <div class="label">Time of interest (HH:MM or HH:MM:SS)</div>
-    <input type="text" id="toi" placeholder="e.g. 14:30 or 09:15:00" autocomplete="off" spellcheck="false">
-    <div class="hint">Saved locally. Wraps to next day if past.</div>
+    <div class="label">Time of impact (HH:MM or HH:MM:SS)</div>
+    <input type="text" id="toi" placeholder="14:30:00" autocomplete="off" spellcheck="false">
   </div>
 
   <div class="panel" id="cdPanel">
-    <div class="label">Countdown to TOI</div>
-    <div class="big amber countdown" id="cd">--:--:--</div>
+    <div class="label">Time to impact</div>
+    <div class="big huge amber countdown" id="cd">--:--:--</div>
   </div>
 </div>
 
@@ -138,7 +142,7 @@ const STALE_MS = 3000;
 
 const $ = id => document.getElementById(id);
 const dot = $("dot"), conn = $("conn"), nowPanel = $("nowPanel");
-const nowEl = $("now"), dateEl = $("date"), vesselEl = $("vessel"), speedEl = $("speed");
+const nowEl = $("now"), dateEl = $("date"), vesselEl = $("vessel");
 const toiInput = $("toi"), cdEl = $("cd"), cdPanel = $("cdPanel");
 
 let lastOk = 0;
@@ -195,7 +199,6 @@ function render() {
     nowEl.textContent = last.time || "--:--:--";
     dateEl.textContent = last.date || "—";
     vesselEl.textContent = last.vessel || "—";
-    speedEl.textContent = (last.convoySpeed != null) ? (last.convoySpeed.toFixed(2) + " kn") : "—";
   }
 
   cdEl.classList.remove("reached", "passed");
