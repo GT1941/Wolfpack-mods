@@ -50,7 +50,7 @@ Exposes in-game state via a local HTTP API on port 1941 for use by webpages, OBS
 **Endpoint:** `http://127.0.0.1:1941/time` returns JSON, e.g.:
 
 ```json
-{"time":"08:59:03","date":"01.09.1939","convoySpeed":4.13,"vessel":"U-552","missionActive":true}
+{"time":"08:59:03","date":"01.09.1939","vessel":"U-552","missionActive":true}
 ```
 
 A sample webpage that shows a countdown from current in-game time to a chosen impact time is provided at [`web/toi.html`](web/toi.html) — open it locally in any browser while the game is running.
