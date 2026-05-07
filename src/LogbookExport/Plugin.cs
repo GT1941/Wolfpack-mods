@@ -25,6 +25,7 @@ public class Plugin : BasePlugin
     internal static bool WasDetected = false;
     internal static string DetectionType = "";
     internal static float LastConvoySpeed = -1f;
+    internal static bool IsConvoyFleeing = false;
 
     static readonly string[] VesselNames = { "U-96", "U-552", "U-564", "U-307" };
 
@@ -76,6 +77,7 @@ public class Plugin : BasePlugin
         TonnageSunk = 0f;
         WasDetected = false; DetectionType = "";
         LastConvoySpeed = -1f;
+        IsConvoyFleeing = false;
         CurrentLogPath = Path.Combine(Paths.BepInExRootPath,
             "PatrolLog_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".txt");
         WriteHeader();
@@ -119,6 +121,7 @@ public class Plugin : BasePlugin
             TorpedoesFired = TorpedoesHit = TorpedoesFailed = 0;
             TonnageSunk = 0f;
             WasDetected = false; DetectionType = "";
+            IsConvoyFleeing = false;
             CurrentLogPath = Path.Combine(Paths.BepInExRootPath,
                 "PatrolLog_" + VesselName + "_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".txt");
             MissionActive = true;
@@ -371,11 +374,21 @@ class LogbookPatcher
 
     [HarmonyPatch(typeof(AI_Convoy), "startFleeing")]
     [HarmonyPostfix]
-    static void OnStartFleeing() => Plugin.Add("CONVOY FLEEING");
+    static void OnStartFleeing()
+    {
+        if (Plugin.IsConvoyFleeing) return;
+        Plugin.IsConvoyFleeing = true;
+        Plugin.Add("CONVOY FLEEING");
+    }
 
     [HarmonyPatch(typeof(AI_Convoy), "stopFleeing")]
     [HarmonyPostfix]
-    static void OnStopFleeing() => Plugin.Add("CONVOY RESUMED COURSE");
+    static void OnStopFleeing()
+    {
+        if (!Plugin.IsConvoyFleeing) return;
+        Plugin.IsConvoyFleeing = false;
+        Plugin.Add("CONVOY RESUMED COURSE");
+    }
 
     // ── Export triggers ───────────────────────────────────────
 
