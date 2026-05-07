@@ -24,6 +24,7 @@ public class Plugin : BasePlugin
     internal static float TonnageSunk = 0f;
     internal static bool WasDetected = false;
     internal static string DetectionType = "";
+    internal static float LastConvoySpeed = -1f;
 
     static readonly string[] VesselNames = { "U-96", "U-552", "U-564", "U-307" };
 
@@ -49,6 +50,17 @@ public class Plugin : BasePlugin
         catch { return "??:??:??"; }
     }
 
+    internal static float GetConvoyNormalSpeed()
+    {
+        try
+        {
+            var convoy = UnityEngine.Object.FindObjectOfType<AI_Convoy>();
+            if (convoy != null) return convoy.convoyNormalSpeed;
+        }
+        catch { }
+        return -1f;
+    }
+
     internal static string GetIngameDate()
     {
         try { return W_GameManager.instance?.lobbyData?.CurrentDate.ToString("dd.MM.yyyy") ?? "Unknown"; }
@@ -63,6 +75,7 @@ public class Plugin : BasePlugin
         TorpedoesFired = TorpedoesHit = TorpedoesFailed = 0;
         TonnageSunk = 0f;
         WasDetected = false; DetectionType = "";
+        LastConvoySpeed = -1f;
         CurrentLogPath = Path.Combine(Paths.BepInExRootPath,
             "PatrolLog_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".txt");
         WriteHeader();
@@ -72,10 +85,14 @@ public class Plugin : BasePlugin
 
     internal static void WriteHeader()
     {
+        float spd = GetConvoyNormalSpeed();
+        string spdLine = spd > 0 ? $"Convoy speed: {spd:F2} kn\r\n" : "";
         string h = $"=== PATROL LOG - {VesselName} ===\r\n" +
                    $"Date:     {GetIngameDate()}\r\n" +
+                   spdLine +
                    $"Logged:   {DateTime.Now:yyyy-MM-dd HH:mm:ss}\r\n\r\n";
         File.WriteAllText(CurrentLogPath, h, System.Text.Encoding.UTF8);
+        if (spd > 0) LastConvoySpeed = spd;
     }
 
     internal static void OnUboatSpawned(W_Uboat uboat)
@@ -149,8 +166,28 @@ public class Plugin : BasePlugin
 // Watches all active uboats every frame and enhances HH:MM → HH:MM:SS
 class LogbookWatcher : MonoBehaviour
 {
+    int _speedCheckTimer = 0;
     void Update()
     {
+        // Monitor convoy speed changes (every ~30 frames to avoid spam)
+        _speedCheckTimer++;
+        if (_speedCheckTimer >= 30)
+        {
+            _speedCheckTimer = 0;
+            if (Plugin.MissionActive)
+            {
+                float spd = Plugin.GetConvoyNormalSpeed();
+                if (spd > 0 && Plugin.LastConvoySpeed > 0 && Math.Abs(spd - Plugin.LastConvoySpeed) > 0.1f)
+                {
+                    Plugin.Add($"CONVOY SPEED CHANGED: {Plugin.LastConvoySpeed:F2} → {spd:F2} kn");
+                    Plugin.LastConvoySpeed = spd;
+                }
+                else if (spd > 0 && Plugin.LastConvoySpeed < 0)
+                {
+                    Plugin.LastConvoySpeed = spd;
+                }
+            }
+        }
         try
         {
             var gm = W_GameManager.instance;
@@ -331,6 +368,14 @@ class LogbookPatcher
         Plugin.WasDetected = true; Plugin.DetectionType = "hydrophone";
         Plugin.Add("DETECTED (hydrophone)");
     }
+
+    [HarmonyPatch(typeof(AI_Convoy), "startFleeing")]
+    [HarmonyPostfix]
+    static void OnStartFleeing() => Plugin.Add("CONVOY FLEEING");
+
+    [HarmonyPatch(typeof(AI_Convoy), "stopFleeing")]
+    [HarmonyPostfix]
+    static void OnStopFleeing() => Plugin.Add("CONVOY RESUMED COURSE");
 
     // ── Export triggers ───────────────────────────────────────
 
