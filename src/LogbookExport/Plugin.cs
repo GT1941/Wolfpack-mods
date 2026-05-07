@@ -378,6 +378,11 @@ class LogbookPatcher
     {
         if (Plugin.IsConvoyFleeing) return;
         Plugin.IsConvoyFleeing = true;
+        if (!Plugin.WasDetected)
+        {
+            Plugin.WasDetected = true;
+            Plugin.DetectionType = "unknown";
+        }
         Plugin.Add("CONVOY FLEEING");
     }
 
