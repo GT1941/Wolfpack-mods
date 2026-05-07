@@ -43,6 +43,22 @@ Scales: merchants, armed merchants, carriers, sloops, corvettes, destroyers, mer
 
 ---
 
+## GT-GameTime
+
+Exposes in-game state via a local HTTP API on port 1941 for use by webpages, OBS overlays, or other tools.
+
+**Endpoint:** `http://127.0.0.1:1941/time` returns JSON, e.g.:
+
+```json
+{"time":"08:59:03","date":"01.09.1939","convoySpeed":4.13,"vessel":"U-552","missionActive":true}
+```
+
+A sample webpage that shows a countdown from current in-game time to a chosen impact time is provided at [`web/toi.html`](web/toi.html) — open it locally in any browser while the game is running.
+
+**Install on:** any client.
+
+---
+
 ## Installation
 
 1. Install [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx/releases) into the Wolfpack game folder
@@ -56,10 +72,14 @@ Scales: merchants, armed merchants, carriers, sloops, corvettes, destroyers, mer
 ├── GT-LogbookExport.dll
 ├── GT-NetworkFix.dll
 ├── GT-LargerConvoy.dll
-└── src/
-    ├── LogbookExport/
-    ├── WolfpackNetworkFix/
-    └── LargerConvoy/
+├── GT-GameTime.dll
+├── src/
+│   ├── LogbookExport/
+│   ├── WolfpackNetworkFix/
+│   ├── LargerConvoy/
+│   └── GameTime/
+└── web/
+    └── toi.html
 ```
 
 ## Requirements
