@@ -26,6 +26,7 @@ public class Plugin : BasePlugin
     internal static string DetectionType = "";
     internal static float LastConvoySpeed = -1f;
     internal static bool IsConvoyFleeing = false;
+    internal static bool WasUboatDestroyed = false;
 
     static readonly string[] VesselNames = { "U-96", "U-552", "U-564", "U-307" };
 
@@ -78,6 +79,7 @@ public class Plugin : BasePlugin
         WasDetected = false; DetectionType = "";
         LastConvoySpeed = -1f;
         IsConvoyFleeing = false;
+        WasUboatDestroyed = false;
         CurrentLogPath = Path.Combine(Paths.BepInExRootPath,
             "PatrolLog_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".txt");
         WriteHeader();
@@ -122,6 +124,7 @@ public class Plugin : BasePlugin
             TonnageSunk = 0f;
             WasDetected = false; DetectionType = "";
             IsConvoyFleeing = false;
+            WasUboatDestroyed = false;
             CurrentLogPath = Path.Combine(Paths.BepInExRootPath,
                 "PatrolLog_" + VesselName + "_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".txt");
             MissionActive = true;
@@ -191,6 +194,31 @@ class LogbookWatcher : MonoBehaviour
                 }
             }
         }
+        // Poll our U-boat's dead state — `W_Uboat.die` postfix is unreliable
+        try
+        {
+            if (Plugin.MissionActive && !Plugin.WasUboatDestroyed)
+            {
+                var gm = W_GameManager.instance;
+                if (gm != null)
+                {
+                    int myCrew = gm.getMyCrew();
+                    var ubs = gm.uboats;
+                    if (ubs != null && myCrew >= 0 && myCrew < ubs.Length && ubs[myCrew] != null)
+                    {
+                        bool dead = false;
+                        try { dead = ubs[myCrew].dead.get(); } catch { }
+                        if (dead)
+                        {
+                            Plugin.WasUboatDestroyed = true;
+                            Plugin.Add("U-BOAT LOST");
+                            Plugin.WriteSummary();
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
         try
         {
             var gm = W_GameManager.instance;
@@ -344,8 +372,10 @@ class LogbookPatcher
     [HarmonyPostfix]
     static void Post_UboatDie(W_Uboat __instance)
     {
+        if (Plugin.WasUboatDestroyed) return;
         var myUboat = GetMyUboat();
         if (myUboat == null || myUboat.Pointer != __instance.Pointer) return;
+        Plugin.WasUboatDestroyed = true;
         Plugin.Add("U-BOAT LOST");
         Plugin.WriteSummary();
     }
