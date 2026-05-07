@@ -11,7 +11,7 @@ Writes a patrol log file to `BepInEx/` after each mission, and upgrades the in-g
 **Patrol log contents:**
 - Torpedo launches, hits, premature detonations
 - Ship sinkings with type and tonnage
-- First detection (visual or hydrophone)
+- First detection (visual, hydrophone, or inferred from convoy fleeing)
 - U-boat loss
 - Summary: torpedoes fired/hit/missed, total tonnage, detected yes/no
 
