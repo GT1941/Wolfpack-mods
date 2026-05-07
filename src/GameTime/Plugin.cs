@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -144,14 +143,6 @@ class TimeWatcher : MonoBehaviour
             try { date = W_GameManager.instance?.lobbyData?.CurrentDate.ToString("dd.MM.yyyy") ?? "Unknown"; }
             catch { }
 
-            float speed = -1f;
-            try
-            {
-                var convoy = UnityEngine.Object.FindObjectOfType<AI_Convoy>();
-                if (convoy != null) speed = convoy.convoyNormalSpeed;
-            }
-            catch { }
-
             string vessel = "";
             bool active = false;
             try
@@ -170,13 +161,9 @@ class TimeWatcher : MonoBehaviour
             }
             catch { }
 
-            string speedStr = speed > 0
-                ? speed.ToString("F2", CultureInfo.InvariantCulture)
-                : "null";
             string json = "{"
                 + "\"time\":\"" + time + "\","
                 + "\"date\":\"" + date + "\","
-                + "\"convoySpeed\":" + speedStr + ","
                 + "\"vessel\":\"" + JsonEscape(vessel) + "\","
                 + "\"missionActive\":" + (active ? "true" : "false")
                 + "}";
