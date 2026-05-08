@@ -311,18 +311,6 @@ class LogbookPatcher
         catch { return true; }
     }
 
-    static bool IsOurBoat(GameObject go)
-    {
-        if (go == null) return false;
-        try
-        {
-            var myUboat = GetMyUboat();
-            if (myUboat == null) return true;
-            return go.Pointer == myUboat.gameObject.Pointer;
-        }
-        catch { return true; }
-    }
-
     // ── Torpedo events ────────────────────────────────────────
 
     static string TubeName(int t)
@@ -443,27 +431,7 @@ class LogbookPatcher
         Plugin.WriteSummary();
     }
 
-    // ── Detection (filtered to our boat) ─────────────────────
-
-    [HarmonyPatch(typeof(AI_Convoy), "detectedUboat")]
-    [HarmonyPostfix]
-    static void OnDetectedVisual(GameObject __0)
-    {
-        if (!IsOurBoat(__0)) return;
-        if (Plugin.WasDetected) return;
-        Plugin.WasDetected = true; Plugin.DetectionType = "visual";
-        Plugin.Add("DETECTED (visual)");
-    }
-
-    [HarmonyPatch(typeof(AI_Convoy), "detectedUboatHydrophone")]
-    [HarmonyPostfix]
-    static void OnDetectedHydro(GameObject __0)
-    {
-        if (!IsOurBoat(__0)) return;
-        if (Plugin.WasDetected) return;
-        Plugin.WasDetected = true; Plugin.DetectionType = "hydrophone";
-        Plugin.Add("DETECTED (hydrophone)");
-    }
+    // ── Detection (inferred from convoy fleeing — see OnStartFleeing below) ──
 
     [HarmonyPatch(typeof(AI_Convoy), "startFleeing")]
     [HarmonyPostfix]
