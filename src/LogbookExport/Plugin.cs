@@ -27,6 +27,8 @@ public class Plugin : BasePlugin
     internal static float LastConvoySpeed = -1f;
     internal static bool IsConvoyFleeing = false;
     internal static bool WasUboatDestroyed = false;
+    internal static int PendingTube = -1;
+    internal static Dictionary<long, int> TorpedoTubeMap = new();
 
     static readonly string[] VesselNames = { "U-96", "U-552", "U-564", "U-307" };
 
@@ -80,6 +82,8 @@ public class Plugin : BasePlugin
         LastConvoySpeed = -1f;
         IsConvoyFleeing = false;
         WasUboatDestroyed = false;
+        PendingTube = -1;
+        TorpedoTubeMap.Clear();
         CurrentLogPath = Path.Combine(Paths.BepInExRootPath,
             "PatrolLog_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".txt");
         WriteHeader();
@@ -125,6 +129,8 @@ public class Plugin : BasePlugin
             WasDetected = false; DetectionType = "";
             IsConvoyFleeing = false;
             WasUboatDestroyed = false;
+            PendingTube = -1;
+            TorpedoTubeMap.Clear();
             CurrentLogPath = Path.Combine(Paths.BepInExRootPath,
                 "PatrolLog_" + VesselName + "_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".txt");
             MissionActive = true;
@@ -319,13 +325,56 @@ class LogbookPatcher
 
     // ── Torpedo events ────────────────────────────────────────
 
+    static string TubeName(int t)
+    {
+        switch (t)
+        {
+            case 1: return "I";
+            case 2: return "II";
+            case 3: return "III";
+            case 4: return "IV";
+            case 5: return "V";
+            case 0: return "Salvo";
+            default: return "?";
+        }
+    }
+
+    [HarmonyPatch(typeof(W_Uboat), "logLaunchedTorpedo")]
+    [HarmonyPrefix]
+    static void Pre_LogLaunchedTorpedo(W_Uboat __instance, int whatTube)
+    {
+        try
+        {
+            var myUboat = GetMyUboat();
+            if (myUboat == null || myUboat.Pointer != __instance.Pointer) return;
+            Plugin.PendingTube = whatTube;
+        }
+        catch { }
+    }
+
     [HarmonyPatch(typeof(Torpedo2), "launch")]
     [HarmonyPostfix]
-    static void Post_Launch(Torpedo2 __instance)
+    static void Post_Launch(Torpedo2 __instance, TorpedoData __2)
     {
         if (!IsMyTorpedo(__instance)) return;
         Plugin.TorpedoesFired++;
-        Plugin.Add("LAUNCHED TORPEDO");
+
+        int tube = Plugin.PendingTube;
+        Plugin.PendingTube = -1;
+
+        float speed = 0f;
+        try { speed = __2.Speed; } catch { }
+
+        bool magnetic = false;
+        try { magnetic = __instance.magneticTrigger != null && __instance.magneticTrigger.enabled; }
+        catch { }
+
+        try { Plugin.TorpedoTubeMap[__instance.Pointer.ToInt64()] = tube; } catch { }
+
+        string detail = (speed > 0 ? speed.ToString("F0") + "kn, " : "")
+                      + (magnetic ? "magnetic" : "impact");
+        string tubeStr = tube > 0 ? "Tube " + TubeName(tube) : "Tube ?";
+        Plugin.Add("LAUNCHED TORPEDO " + tubeStr + " (" + detail + ")");
     }
 
     [HarmonyPatch(typeof(Torpedo2), "explode")]
@@ -334,7 +383,14 @@ class LogbookPatcher
     {
         if (!IsMyTorpedo(__instance)) return;
         Plugin.TorpedoesHit++;
-        Plugin.Add("TORPEDO HIT");
+        int tube = -1;
+        try
+        {
+            long key = __instance.Pointer.ToInt64();
+            if (Plugin.TorpedoTubeMap.TryGetValue(key, out var t)) { tube = t; Plugin.TorpedoTubeMap.Remove(key); }
+        }
+        catch { }
+        Plugin.Add(tube > 0 ? "TORPEDO HIT (Tube " + TubeName(tube) + ")" : "TORPEDO HIT");
     }
 
     [HarmonyPatch(typeof(Torpedo2), "torpedoFail")]
@@ -343,7 +399,14 @@ class LogbookPatcher
     {
         if (!IsMyTorpedo(__instance)) return;
         Plugin.TorpedoesFailed++;
-        Plugin.Add("TORPEDO FAILED");
+        int tube = -1;
+        try
+        {
+            long key = __instance.Pointer.ToInt64();
+            if (Plugin.TorpedoTubeMap.TryGetValue(key, out var t)) { tube = t; Plugin.TorpedoTubeMap.Remove(key); }
+        }
+        catch { }
+        Plugin.Add(tube > 0 ? "TORPEDO FAILED (Tube " + TubeName(tube) + ")" : "TORPEDO FAILED");
     }
 
     // ── Ship sunk (all clients log all sinkings) ──────────────
