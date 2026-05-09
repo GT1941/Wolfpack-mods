@@ -50,6 +50,8 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 
 > **Note:** The mission's success/scoring tonnage goal is **not** scaled — only the spawned convoy is. So with ×2 you'll see roughly twice as many targets, but the threshold to "succeed" the mission stays the same as the unmodded value, effectively making missions easier (more targets to chew through for the same objective).
 
+> **Note:** Convoy and escort AI is not designed for these inflated counts. Expect odd behaviour — formation glitches, escorts overlapping or piling up, weird pathing, unusual detection/fleeing responses. The game's AI is balanced around the unmodded convoy size, and the mod doesn't touch any of that logic.
+
 **Install on:** host only.
 
 ### Variants
