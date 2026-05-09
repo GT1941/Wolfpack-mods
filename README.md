@@ -29,10 +29,9 @@ Writes a patrol log file to `BepInEx/` after each mission, summarising what happ
 Two enhancements to the in‑game C‑menu logbook:
 
 1. **Seconds upgrade** — rewrites timestamps from `HH:MM` to `HH:MM:SS` for finer time resolution.
-2. **Torpedo metadata** — after each launch entry, appends a sibling line with the torpedo's speed and detonator type. Example:
+2. **Torpedo metadata** — appends the torpedo's speed and detonator type to the launch entry the game just wrote. Example:
    ```
-   08:42:13 W  Tube I launched
-   08:42:13     Tube I - 30kn magnetic
+   14:07:12 LAUNCHED TORPEDO TUBE 1. (44kn magnetic)
    ```
 
 The seconds upgrade runs entirely client‑side and works whether you host or join, even if no one else has the mod. Two players running it simultaneously is fine — the rewrite is idempotent.
