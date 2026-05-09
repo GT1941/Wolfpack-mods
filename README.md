@@ -53,7 +53,7 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 | DLL | Multiplier | Notes |
 | --- | --- | --- |
 | `GT-LargerConvoy1_5x.dll` | ×1.5 | Gentle bump |
-| `GT-LargerConvoy.dll` | ×2 | Default |
+| `GT-LargerConvoy2x.dll` | ×2 | Default |
 
 Pick at most one — they all patch the same method, so loading multiple stacks the multipliers.
 
@@ -88,14 +88,14 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 ├── GT-LogbookExport.dll
 ├── GT-LogbookSeconds.dll
 ├── GT-NetworkFix.dll
-├── GT-LargerConvoy.dll
+├── GT-LargerConvoy2x.dll
 ├── GT-LargerConvoy1_5x.dll
 ├── GT-GameTime.dll
 ├── src/
 │   ├── LogbookExport/
 │   ├── LogbookSeconds/
 │   ├── WolfpackNetworkFix/
-│   ├── LargerConvoy/
+│   ├── LargerConvoy2x/
 │   ├── LargerConvoy1_5x/
 │   └── GameTime/
 └── web/
