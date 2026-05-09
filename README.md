@@ -38,7 +38,9 @@ Pure client-side: works whether you host or join, regardless of whether the host
 
 Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubber-banding and desync in multiplayer.
 
-**Install on:** host (required); clients (optional).
+> **May be redundant in current builds.** Recent game patches included AI ship maneuverability / movement fixes that appear to address some of what this mod was originally working around. It hasn't been A/B tested against the latest version, so it's left available — using it shouldn't hurt either way, but you may not need it.
+
+**Install on:** host (required if used); clients (optional).
 
 ---
 
