@@ -48,6 +48,8 @@ Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubb
 
 Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying its outputs (merchants, armed merchants, carriers, sloops, corvettes, destroyers, merchant tonnage goal).
 
+> **Note:** The mission's success/scoring tonnage goal is **not** scaled — only the spawned convoy is. So with ×2 you'll see roughly twice as many targets, but the threshold to "succeed" the mission stays the same as the unmodded value, effectively making missions easier (more targets to chew through for the same objective).
+
 **Install on:** host only.
 
 ### Variants
