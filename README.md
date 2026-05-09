@@ -4,7 +4,7 @@ BepInEx mods for [Wolfpack](https://store.steampowered.com/app/1168840/Wolfpack/
 
 ---
 
-## GT-LogbookExport
+## LogbookExport
 
 Writes a patrol log file to `BepInEx/` after each mission, summarising what happened.
 
@@ -24,7 +24,7 @@ Writes a patrol log file to `BepInEx/` after each mission, summarising what happ
 
 ---
 
-## GT-LogbookSeconds
+## LogbookSeconds
 
 Upgrades the in-game C-menu logbook to show seconds (`HH:MM` → `HH:MM:SS`).
 
@@ -34,7 +34,7 @@ Pure client-side: works whether you host or join, regardless of whether the host
 
 ---
 
-## GT-NetworkFix
+## NetworkFix
 
 Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubber-banding and desync in multiplayer.
 
@@ -44,7 +44,7 @@ Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubb
 
 ---
 
-## GT-LargerConvoy
+## LargerConvoy
 
 Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying its outputs (merchants, armed merchants, carriers, sloops, corvettes, destroyers, merchant tonnage goal).
 
@@ -61,7 +61,7 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 
 ---
 
-## GT-GameTime
+## GameTime
 
 Exposes in-game state via a local HTTP API on port 1941 for use by webpages, OBS overlays, or other tools.
 
