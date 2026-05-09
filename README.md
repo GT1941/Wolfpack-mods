@@ -65,7 +65,7 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 
 ---
 
-## GameTime
+## Game Time API
 
 Exposes in-game state via a local HTTP API on port 1941 for use by webpages, OBS overlays, or other tools.
 
