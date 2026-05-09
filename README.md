@@ -100,8 +100,7 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 │   ├── LogbookSeconds/
 │   ├── WolfpackNetworkFix/
 │   ├── LargerConvoy2x/
-│   ├── LargerConvoy1_5x/
-│   └── GameTime/
+│   └── LargerConvoy1_5x/
 └── web/
     └── toi.html
 ```
