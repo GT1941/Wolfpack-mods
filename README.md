@@ -1,27 +1,36 @@
 # Wolfpack BepInEx Mods
 
-Three BepInEx mods for [Wolfpack](https://store.steampowered.com/app/1168840/Wolfpack/) (pre-beta, IL2CPP). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
+BepInEx mods for [Wolfpack](https://store.steampowered.com/app/1168840/Wolfpack/) (pre-beta, IL2CPP). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
 
 ---
 
 ## GT-LogbookExport
 
-Writes a patrol log file to `BepInEx/` after each mission, and upgrades the in-game C-menu logbook to show seconds.
+Writes a patrol log file to `BepInEx/` after each mission, summarising what happened.
 
 **Patrol log contents:**
-- Torpedo launches, hits, premature detonations
+- Torpedo launches (with tube number), hits (with tube number), premature detonations
 - Ship sinkings with type and tonnage
 - First detection (visual, hydrophone, or inferred from convoy fleeing)
 - U-boat loss
 - Summary: torpedoes fired/hit/missed, total tonnage, detected yes/no
 
-**In-game logbook:**
-- Upgrades timestamps from `HH:MM` to `HH:MM:SS` in the C-menu logbook
-
 **Notes:**
 - One patrol log file per boat per session, named e.g. `PatrolLog_U-96_2026-01-01_20-00-00.txt`
 - Timestamps use in-game time (HH:MM:SS)
-- Some patrol log events (ship sinkings, detection) may only fire on the host
+- **Host only:** if you join someone else's session, the mod stays inert and does not write a file (clients lack visibility into most events). Look for `[LogbookExport] Skipping patrol log (not host)` in `BepInEx/LogOutput.log` if you're unsure.
+
+**Install on:** host (writes the file). Loading it on clients is harmless — it just does nothing.
+
+---
+
+## GT-LogbookSeconds
+
+Upgrades the in-game C-menu logbook to show seconds (`HH:MM` → `HH:MM:SS`).
+
+Pure client-side: works whether you host or join, regardless of whether the host has the mod. Two players running it simultaneously is fine — the rewrite is idempotent.
+
+**Install on:** any client.
 
 ---
 
@@ -35,11 +44,18 @@ Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubb
 
 ## GT-LargerConvoy
 
-Doubles convoy size by scaling `ConvoySpawner` fields ×2 on mission start.
-
-Scales: merchants, armed merchants, carriers, sloops, corvettes, destroyers, merchant tonnage goal.
+Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying its outputs (merchants, armed merchants, carriers, sloops, corvettes, destroyers, merchant tonnage goal).
 
 **Install on:** host only.
+
+### Variants
+
+| DLL | Multiplier | Notes |
+| --- | --- | --- |
+| `GT-LargerConvoy1_5x.dll` | ×1.5 | Gentle bump |
+| `GT-LargerConvoy.dll` | ×2 | Default |
+
+Pick at most one — they all patch the same method, so loading multiple stacks the multipliers.
 
 ---
 
@@ -70,13 +86,17 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 ```
 .
 ├── GT-LogbookExport.dll
+├── GT-LogbookSeconds.dll
 ├── GT-NetworkFix.dll
 ├── GT-LargerConvoy.dll
+├── GT-LargerConvoy1_5x.dll
 ├── GT-GameTime.dll
 ├── src/
 │   ├── LogbookExport/
+│   ├── LogbookSeconds/
 │   ├── WolfpackNetworkFix/
 │   ├── LargerConvoy/
+│   ├── LargerConvoy1_5x/
 │   └── GameTime/
 └── web/
     └── toi.html
@@ -84,6 +104,6 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 
 ## Requirements
 
-- Wolfpack pre-beta — Steam `testing` branch (Unity 2020.3, IL2CPP)
+- Wolfpack pre-beta — Steam `testing` or `beta-beta` branch (Unity 2020.3, IL2CPP)
 - BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2 (the version these mods were built and tested against)
 - .NET 8 SDK (only if building from source)
