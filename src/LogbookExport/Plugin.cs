@@ -40,6 +40,14 @@ public class Plugin : BasePlugin
         Log.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
     }
 
+    // True if this client is the multiplayer host (or singleplayer). Defaults to true
+    // on error so a transient init hiccup doesn't suppress a real host's log file.
+    internal static bool IsHost()
+    {
+        try { return W_NetworkManager.IsServer; }
+        catch { return true; }
+    }
+
     internal static string GameTime()
     {
         try
@@ -74,6 +82,13 @@ public class Plugin : BasePlugin
     internal static void StartMission(string source)
     {
         if (MissionActive) return;
+        if (!IsHost())
+        {
+            // Clients don't have full visibility (sinkings, detection, etc. fire only on host),
+            // so the resulting file would be sparse and misleading. Stay inert.
+            Log.LogInfo("[LogbookExport] Skipping patrol log (not host) - source=" + source);
+            return;
+        }
         Entries.Clear();
         VesselName = "U-???";
         TorpedoesFired = TorpedoesHit = TorpedoesFailed = 0;
@@ -175,7 +190,8 @@ public class Plugin : BasePlugin
     }
 }
 
-// Watches all active uboats every frame and enhances HH:MM → HH:MM:SS
+// Watcher: convoy-speed changes + own-uboat death detection.
+// (HH:MM → HH:MM:SS in-game logbook upgrade lives in the GT-LogbookSeconds mod.)
 class LogbookWatcher : MonoBehaviour
 {
     int _speedCheckTimer = 0;
@@ -221,35 +237,6 @@ class LogbookWatcher : MonoBehaviour
                             Plugin.WriteSummary();
                         }
                     }
-                }
-            }
-        }
-        catch { }
-        try
-        {
-            var gm = W_GameManager.instance;
-            if (gm?.uboats == null) return;
-            foreach (var uboat in gm.uboats)
-            {
-                if (uboat == null) continue;
-                string log = uboat.logBook ?? "";
-                if (log.Length < 6) continue;
-                string[] lines = log.Split('\n');
-                bool changed = false;
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    string line = lines[i];
-                    // Match HH:MM format: pos 2=':', pos 5=' ' (not already HH:MM:SS)
-                    if (line.Length > 5 && line[2] == ':' && line[5] == ' ')
-                    {
-                        lines[i] = Plugin.GameTime() + line.Substring(5);
-                        changed = true;
-                    }
-                }
-                if (changed)
-                {
-                    uboat.logBook = string.Join("\n", lines);
-                    uboat.updateLogbook();
                 }
             }
         }
