@@ -96,7 +96,7 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 ├── NetworkFix.dll
 ├── LargerConvoy2x.dll
 ├── LargerConvoy1_5x.dll
-├── GameTime.dll
+├── GameTime_API.dll
 ├── src/
 │   ├── LogbookExport/
 │   ├── LogbookSeconds/
