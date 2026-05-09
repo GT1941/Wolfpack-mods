@@ -55,7 +55,7 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 | `GT-LargerConvoy1_5x.dll` | ×1.5 | Gentle bump |
 | `GT-LargerConvoy2x.dll` | ×2 | Default |
 
-Pick at most one — they all patch the same method, so loading multiple stacks the multipliers.
+> **Important:** Load only **one** LargerConvoy DLL at a time. All variants patch the same method (`ConvoySpawner.randomEncounter`), so loading two would **stack** the multipliers — e.g. `1_5x` + `2x` would give ×3, not ×2. When switching variants, delete the old DLL from `BepInEx/plugins/` before dropping in the new one.
 
 ---
 
