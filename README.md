@@ -18,7 +18,7 @@ Writes a patrol log file to `BepInEx/` after each mission, summarising what happ
 **Notes:**
 - One patrol log file per boat per session, named e.g. `PatrolLog_U-96_2026-01-01_20-00-00.txt`
 - Timestamps use in-game time (HH:MM:SS)
-- **Host only:** if you join someone else's session, the mod stays inert and does not write a file (clients lack visibility into most events). Look for `[LogbookExport] Skipping patrol log (not host)` in `BepInEx/LogOutput.log` if you're unsure.
+- **Host only:** if you join someone else's session, the mod stays inert and does not write a file (clients lack visibility into most events).
 
 **Install on:** host (writes the file). Loading it on clients is harmless — it just does nothing.
 
