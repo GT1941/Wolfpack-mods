@@ -26,11 +26,20 @@ Writes a patrol log file to `BepInEx/` after each mission, summarising what happ
 
 ## LogbookSeconds
 
-Upgrades the in-game C-menu logbook to show seconds (`HH:MM` → `HH:MM:SS`).
+Two enhancements to the in‑game C‑menu logbook:
 
-Pure client-side: works whether you host or join, regardless of whether the host has the mod. Two players running it simultaneously is fine — the rewrite is idempotent.
+1. **Seconds upgrade** — rewrites timestamps from `HH:MM` to `HH:MM:SS` for finer time resolution.
+2. **Torpedo metadata** — after each launch entry, appends a sibling line with the torpedo's speed and detonator type. Example:
+   ```
+   08:42:13 W  Tube I launched
+   08:42:13     Tube I - 30kn magnetic
+   ```
 
-**Install on:** any client.
+The seconds upgrade runs entirely client‑side and works whether you host or join, even if no one else has the mod. Two players running it simultaneously is fine — the rewrite is idempotent.
+
+The torpedo metadata is **host‑authoritative**: when the host has the mod, all clients see the enriched lines via the logbook SyncVar. If only a client has the mod (vanilla host), the seconds upgrade still works but no metadata is added — this avoids a visible flicker that would happen if the client added a line and the host's SyncVar overwrote it next tick.
+
+**Install on:** any client. For metadata to appear for everyone in the crew, the **host** needs it.
 
 ---
 
