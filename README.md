@@ -54,8 +54,8 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 
 | DLL | Multiplier | Notes |
 | --- | --- | --- |
-| `GT-LargerConvoy1_5x.dll` | ×1.5 | Gentle bump |
-| `GT-LargerConvoy2x.dll` | ×2 | Default |
+| `LargerConvoy1_5x.dll` | ×1.5 | Gentle bump |
+| `LargerConvoy2x.dll` | ×2 | Default |
 
 > **Important:** Load only **one** LargerConvoy DLL at a time. All variants patch the same method (`ConvoySpawner.randomEncounter`), so loading two would **stack** the multipliers — e.g. `1_5x` + `2x` would give ×3, not ×2. When switching variants, delete the old DLL from `BepInEx/plugins/` before dropping in the new one.
 
@@ -87,12 +87,12 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 
 ```
 .
-├── GT-LogbookExport.dll
-├── GT-LogbookSeconds.dll
-├── GT-NetworkFix.dll
-├── GT-LargerConvoy2x.dll
-├── GT-LargerConvoy1_5x.dll
-├── GT-GameTime.dll
+├── LogbookExport.dll
+├── LogbookSeconds.dll
+├── NetworkFix.dll
+├── LargerConvoy2x.dll
+├── LargerConvoy1_5x.dll
+├── GameTime.dll
 ├── src/
 │   ├── LogbookExport/
 │   ├── LogbookSeconds/
