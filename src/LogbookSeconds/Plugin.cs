@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
@@ -10,21 +9,15 @@ namespace LogbookSeconds;
 // Two features in one mod:
 //   1. Seconds upgrade: every frame, rewrite each visible uboat's in-game logbook
 //      so HH:MM timestamps become HH:MM:SS. Pure client-side, idempotent.
-//   2. Torpedo metadata: when a torpedo launches, append a sibling line to its
-//      owning uboat's logbook with speed and detonator type. Host-gated to avoid
-//      flicker on clients (host's append propagates via the logBook SyncVar).
+//   2. Torpedo metadata: when a torpedo launches, append speed + detonator type
+//      to the just-written launch line (in-place, so it stays on one line).
+//      Host-gated to avoid SyncVar flicker on clients.
 //
 // Same DLL works whether you host or join. No file swap needed.
 [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
 public class Plugin : BasePlugin
 {
     internal static new ManualLogSource Log;
-
-    // FIFO queue of pending tube numbers per uboat. logLaunchedTorpedo Prefix
-    // enqueues; Torpedo2.launch Postfix dequeues. Per-uboat keying handles
-    // concurrent launches across boats in MP. Queue (not single int) handles
-    // back-to-back launches (e.g. salvo) before postfixes resolve.
-    internal static Dictionary<long, Queue<int>> PendingTubesByUboat = new();
 
     public override void Load()
     {
@@ -54,20 +47,6 @@ public class Plugin : BasePlugin
     {
         try { return W_NetworkManager.IsServer; }
         catch { return true; }
-    }
-
-    internal static string TubeName(int t)
-    {
-        switch (t)
-        {
-            case 1: return "I";
-            case 2: return "II";
-            case 3: return "III";
-            case 4: return "IV";
-            case 5: return "V";
-            case 0: return "Salvo";
-            default: return "?";
-        }
     }
 }
 
@@ -116,30 +95,8 @@ class LogbookWatcher : MonoBehaviour
     }
 }
 
-// Capture tube number when game logs a torpedo launch, so we can correlate it
-// with the Torpedo2.launch Postfix that fires immediately after.
-[HarmonyPatch(typeof(W_Uboat), "logLaunchedTorpedo")]
-class TubeCapturePatch
-{
-    [HarmonyPrefix]
-    static void Pre(W_Uboat __instance, int whatTube)
-    {
-        try
-        {
-            long key = __instance.Pointer.ToInt64();
-            if (!Plugin.PendingTubesByUboat.TryGetValue(key, out var q))
-            {
-                q = new Queue<int>();
-                Plugin.PendingTubesByUboat[key] = q;
-            }
-            q.Enqueue(whatTube);
-        }
-        catch { }
-    }
-}
-
-// Append a "metadata" line to the firing uboat's logBook with speed + detonator.
-// Host-only: clients receive the enriched logBook via SyncVar. Avoids flicker.
+// Append " (SPEEDkn TRIGGER)" directly to the launch line the game just wrote.
+// Host-only: clients receive the enriched logBook via SyncVar.
 [HarmonyPatch(typeof(Torpedo2), "launch")]
 class LaunchEnrichPatch
 {
@@ -153,17 +110,6 @@ class LaunchEnrichPatch
             var ownerUboat = FindOwnerUboat(__instance);
             if (ownerUboat == null) return;
 
-            int tube = -1;
-            try
-            {
-                long key = ownerUboat.Pointer.ToInt64();
-                if (Plugin.PendingTubesByUboat.TryGetValue(key, out var q) && q.Count > 0)
-                {
-                    tube = q.Dequeue();
-                }
-            }
-            catch { }
-
             float speed = 0f;
             try { speed = __2.Speed; } catch { }
             bool magnetic = false;
@@ -172,11 +118,30 @@ class LaunchEnrichPatch
 
             string speedStr = speed > 0 ? speed.ToString("F0") + "kn" : "?kn";
             string trigger  = magnetic ? "magnetic" : "impact";
-            string tubeStr  = tube > 0 ? "Tube " + Plugin.TubeName(tube) : "Tube ?";
-            string newLine  = Plugin.GameTime() + "    " + tubeStr + " - " + speedStr + " " + trigger;
+            string suffix   = " (" + speedStr + " " + trigger + ")";
 
             string existing = ownerUboat.logBook ?? "";
-            ownerUboat.logBook = existing.Length > 0 ? existing + "\n" + newLine : newLine;
+            if (existing.Length == 0) return;
+
+            // Strip trailing newlines so we land on the actual content of the last line.
+            int trimEnd = existing.Length;
+            while (trimEnd > 0 && (existing[trimEnd - 1] == '\n' || existing[trimEnd - 1] == '\r')) trimEnd--;
+            if (trimEnd == 0) return;
+            string trailing = existing.Substring(trimEnd);
+            string content  = existing.Substring(0, trimEnd);
+            int lastLineStart = content.LastIndexOf('\n') + 1;
+            string lastLine = content.Substring(lastLineStart);
+
+            // Sanity: this should be a torpedo launch line the game just wrote.
+            // If we can't confirm it, skip rather than corrupt an arbitrary line.
+            string upper = lastLine.ToUpperInvariant();
+            if (!upper.Contains("TORPEDO") && !upper.Contains("TUBE")) return;
+
+            // Idempotency: don't append twice.
+            if (lastLine.Contains("kn ") && (lastLine.Contains("magnetic") || lastLine.Contains("impact"))) return;
+            if (lastLine.Contains("KN ") && (upper.Contains("MAGNETIC") || upper.Contains("IMPACT"))) return;
+
+            ownerUboat.logBook = content + suffix + trailing;
             try { ownerUboat.updateLogbook(); } catch { }
         }
         catch (System.Exception ex)
