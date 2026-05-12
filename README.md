@@ -105,18 +105,13 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 ├── LargerConvoy2x.dll
 ├── LargerConvoy1_5x.dll
 ├── GameTime_API.dll
-├── src/
-│   ├── LogbookExport/
-│   ├── LogbookSeconds/
-│   ├── WolfpackNetworkFix/
-│   ├── LargerConvoy2x/
-│   └── LargerConvoy1_5x/
 └── web/
     └── toi.html
 ```
+
+Source is not currently public.
 
 ## Requirements
 
 - Wolfpack pre-beta — Steam `testing` or `beta-beta` branch (Unity 2020.3, IL2CPP)
 - BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2 (the version these mods were built and tested against)
-- .NET 8 SDK (only if building from source)
