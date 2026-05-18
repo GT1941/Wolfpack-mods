@@ -112,6 +112,19 @@ A 3D replay viewer (Three.js, single HTML file with multi-TOI tracking, bathymet
 
 ---
 
+## TimeHUD
+
+Two small features in one mod:
+
+1. **In-game clock HUD** — a small label in the top-right of the screen showing the current in-game clock (`HH:MM:SS` by default; seconds optional). Drawn over the game UI so it sits on top of every screen without fighting Wolfpack's canvas hierarchy.
+2. **Chat timestamps** — every line shown via `W_InGameChat.showMessage`/`showTextMessage` gets a `[HH:MM]` prefix using the current in-game time. Each viewer prepends their own local stamp; `azureTime` is server-synced, so timestamps agree across peers within ~1 s.
+
+Both features are individually togglable in BepInEx config (`HUD.Enabled`, `Chat.Enabled`), with extra knobs for font size, seconds vs. minutes precision, etc.
+
+**Install on:** any client.
+
+---
+
 ## RadioAPI
 
 Exposes the in-game radio's send/receive stream as a local HTTP API on port 1942 for external tools and overlays.
@@ -145,6 +158,7 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 ├── GameTime_API.dll
 ├── MissionMap.dll
 ├── RadioAPI.dll
+├── TimeHUD.dll
 └── web/
     └── toi.html
 ```
