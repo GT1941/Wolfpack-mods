@@ -144,7 +144,7 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 
 ## Installation
 
-1. Install [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx/releases) into the Wolfpack game folder
+1. Install BepInEx 6 IL2CPP into the Wolfpack game folder. Use a recent **bleeding-edge** build (the `win-x64` IL2CPP artifact) from the official build server: <https://builds.bepinex.dev/projects/bepinex_be>
 2. Drop the desired `.dll` files into `BepInEx/plugins/`
 3. Launch the game
 
@@ -171,4 +171,4 @@ Source is not currently public.
 ## Requirements
 
 - Wolfpack pre-beta — Steam `testing` or `beta-beta` branch (Unity 2020.3, IL2CPP)
-- BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2 (the version these mods were built and tested against)
+- BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2 (the version these mods were built and tested against). Newer bleeding-edge builds from <https://builds.bepinex.dev/projects/bepinex_be> generally work too.
