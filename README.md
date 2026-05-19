@@ -18,6 +18,8 @@ Records every entity's position over the course of a mission and ships with a fu
 
 A 3D replay viewer is included at [`web/missionmap.html`](web/missionmap.html) — drop a mission JSON onto it. Three.js scene with to-scale hulls, a hierarchical Kriegsmarine naval grid that subdivides as you zoom, seafloor depth markers, per-U-boat chart-drawing toggles, multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system.
 
+**Discord auto-post (experimental):** there is an initial attempt at automatically posting the finished mission JSON (plus an optional summary, roster, and settings) to a Discord channel via webhook. It's off by default and configured entirely through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it. Treat it as a work in progress.
+
 **Notes:**
 - Multiplayer clients have limited visibility — recordings are most complete when run on the host.
 - Recording only finalises when the mission ends cleanly (debrief).
