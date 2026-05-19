@@ -4,6 +4,49 @@ BepInEx mods for [Wolfpack](https://store.steampowered.com/app/1168840/Wolfpack/
 
 ---
 
+## MissionMap
+
+Records every entity's position over the course of a mission and ships with a full 3D replay viewer.
+
+**Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
+- U-boats sampled every 1 s (drops to 0.25 s during dives so under-keel tracks transitions): position, depth, speed, heading, HP, battery, under-keel clearance.
+- Convoy ships every 15 s: position, heading, physical speed, ship-type name, HP, alerted/burning flags.
+- Torpedoes and depth charges per tick whenever they're in flight (torpedo depth included).
+- Events: torpedo launch (with TDC range, set speed in kn, gyro, depth, type, magnetic flag, owner, tube), torpedo hit (with tube + server-synced time), ship sunk (name + tonnage), depth-charge fire/impact, gun fire/land, collisions, bottom hits, u-boat lost.
+- Mission settings, crew roster snapshots, and player connect/disconnect events.
+- Top-level: ISO-8601 timestamp with timezone offset, in-game date, game-time anchor + measured game-time rate.
+
+A 3D replay viewer is included at [`web/missionmap.html`](web/missionmap.html) — drop a mission JSON onto it. Three.js scene with to-scale hulls, a hierarchical Kriegsmarine naval grid that subdivides as you zoom, seafloor depth markers, per-U-boat chart-drawing toggles, multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system.
+
+**Notes:**
+- Multiplayer clients have limited visibility — recordings are most complete when run on the host.
+- Recording only finalises when the mission ends cleanly (debrief).
+
+**Install on:** host (full data); clients (sparse / often empty).
+
+---
+
+## LogbookSeconds
+
+Enhancements to the in‑game C‑menu logbook:
+
+1. **Seconds upgrade** — rewrites timestamps from `HH:MM` to `HH:MM:SS` for finer time resolution.
+2. **Torpedo launch metadata** — appends the torpedo's speed and detonator type to the launch entry the game just wrote. Example:
+   ```
+   14:07:12 LAUNCHED TORPEDO TUBE 1. (44kn magnetic)
+   ```
+3. **Torpedo hit tube + impact angle** — appends the firing tube and impact angle to each hit line so the captain can see which tube scored and how square the hit was:
+   ```
+   14:07:40 TORPEDO HIT HEAVY TANKER, TYPE 32. (tube 1, 78° impact)
+   ```
+4. **Friendly-fire reporting** — when a torpedo strikes another U-boat the game logs only a vague "premature" line; this rewrites it into a proper friendly-fire hit/sink report (firer, victim, tube, impact angle), and notes the loss on both boats if the hit is fatal.
+
+`logBook` is per‑peer (not synced), so each peer maintains its own copy. The mod runs locally on every peer that sees the firing/exploding torpedo — each captain gets the enrichment on their own boat regardless of who is hosting. Idempotency guards stop double‑appends if the field ever does sync. Two players running the mod simultaneously is fine.
+
+**Install on:** any client.
+
+---
+
 ## LogbookExport
 
 Writes a patrol log file to `BepInEx/` after each mission, summarising what happened.
@@ -21,26 +64,6 @@ Writes a patrol log file to `BepInEx/` after each mission, summarising what happ
 - **Host only:** if you join someone else's session, the mod stays inert and does not write a file (clients lack visibility into most events).
 
 **Install on:** host (writes the file). Loading it on clients is harmless — it just does nothing.
-
----
-
-## LogbookSeconds
-
-Three enhancements to the in‑game C‑menu logbook:
-
-1. **Seconds upgrade** — rewrites timestamps from `HH:MM` to `HH:MM:SS` for finer time resolution.
-2. **Torpedo launch metadata** — appends the torpedo's speed and detonator type to the launch entry the game just wrote. Example:
-   ```
-   14:07:12 LAUNCHED TORPEDO TUBE 1. (44kn magnetic)
-   ```
-3. **Torpedo hit tube** — appends the firing tube to each hit line so the captain can see which tube scored:
-   ```
-   14:07:40 TORPEDO HIT HEAVY TANKER, TYPE 32. (tube 1)
-   ```
-
-`logBook` is per‑peer (not synced), so each peer maintains its own copy. The mod runs locally on every peer that sees the firing/exploding torpedo — each captain gets the enrichment on their own boat regardless of who is hosting. Idempotency guards stop double‑appends if the field ever does sync. Two players running the mod simultaneously is fine.
-
-**Install on:** any client.
 
 ---
 
@@ -91,27 +114,6 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 
 ---
 
-## MissionMap
-
-Records every entity's position over the course of a mission and ships with a full 3D replay viewer.
-
-**Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
-- U-boats sampled every 1 s (drops to 0.25 s during dives so under-keel tracks transitions): position, depth, speed, heading, HP, battery, under-keel clearance.
-- Convoy ships every 15 s: position, heading, physical speed, ship-type name, HP, alerted/burning flags.
-- Torpedoes and depth charges per tick whenever they're in flight.
-- Events: torpedo launch (with TDC range, set speed in kn, gyro, depth, type, magnetic flag, owner), torpedo hit, ship sunk (name + tonnage), depth-charge fire/impact, gun fire/land, collisions, bottom hits, u-boat lost.
-- Top-level: ISO-8601 timestamp with timezone offset, in-game date, game-time anchor + measured game-time rate.
-
-A 3D replay viewer (Three.js, single HTML file with multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system) is available in the dev repo.
-
-**Notes:**
-- Multiplayer clients have limited visibility — recordings are most complete when run on the host.
-- Recording only finalises when the mission ends cleanly (debrief).
-
-**Install on:** host (full data); clients (sparse / often empty).
-
----
-
 ## TimeHUD
 
 Two small features in one mod:
@@ -150,16 +152,17 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 
 ```
 .
-├── LogbookExport.dll
+├── MissionMap.dll
 ├── LogbookSeconds.dll
+├── LogbookExport.dll
 ├── NetworkFix.dll
 ├── LargerConvoy1_5x.dll
 ├── LargerConvoy2x.dll
 ├── GameTime_API.dll
-├── MissionMap.dll
-├── RadioAPI.dll
 ├── TimeHUD.dll
+├── RadioAPI.dll
 └── web/
+    ├── missionmap.html
     └── toi.html
 ```
 
