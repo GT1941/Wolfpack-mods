@@ -254,6 +254,7 @@
   #hud3dBtns {
     display: flex; gap: 4px;
     pointer-events: auto;
+    margin-left: auto;   /* hug the right edge of the header top line */
   }
   #hud3dBtns button {
     background: rgba(19,26,31,0.85);
@@ -366,17 +367,28 @@
   #tooltip .hd { color: var(--amber); font-weight: bold; margin-bottom: 2px; }
   #tooltip .row { display: flex; justify-content: space-between; gap: 12px; }
   #tooltip .row .k { color: var(--dim); }
+  /* Roomier box for torpedo hovers — more fields, worth the extra real
+     estate so the firing solution reads cleanly at a glance. */
+  #tooltip.big { font-size: 13.5px; max-width: 460px; padding: 11px 14px; line-height: 1.6; }
+  #tooltip.big .hd { font-size: 15px; margin-bottom: 5px; }
+  #tooltip.big .row { gap: 22px; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map</h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-19c</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
     <span class="meta">Game time: <span id="gameTime">--:--</span> <span id="gameDate"></span></span>
     <span class="meta">Recorded: <span id="recReal">--</span></span>
     <span class="meta" title="Mean speed &amp; heading of merchants still afloat at full HP. Reads 'Alerted' when any escort has detected something.">Convoy avg: <span id="convoyAvg">--</span> · <span id="convoyHead">--</span></span>
+    <div id="hud3dBtns">
+      <button id="depthModeBtn" title="Cycle seafloor depth source (G)">Depth: Pinger</button>
+      <button id="resetViewBtn" title="Reset orientation (R)">Reset view</button>
+      <button id="fitBoundsBtn" title="Fit recording (F)">Fit</button>
+      <button id="topDownBtn"   title="Toggle 2D top-down / 3D oblique view (T)">Top-down</button>
+    </div>
   </header>
   <div id="stage">
     <canvas id="map" style="display:none"></canvas>
@@ -435,11 +447,6 @@
       <div id="readout">
         <div><span class="k">PITCH</span><span id="pitchVal">--°</span></div>
         <div><span class="k">ZOOM</span><span id="zoomVal">--</span></div>
-      </div>
-      <div id="hud3dBtns">
-        <button id="resetViewBtn" title="Reset orientation (R)">Reset view</button>
-        <button id="fitBoundsBtn" title="Fit recording (F)">Fit</button>
-        <button id="topDownBtn"   title="Toggle 2D top-down / 3D oblique view (T)">Top-down</button>
       </div>
       <div id="uboatList" title="Click a U-boat to focus the camera on it"></div>
       <div id="hud3dHints">
@@ -1976,6 +1983,7 @@ let view3dActive = false;
 let scene3d, camera3d, renderer3d, controls3d;
 const sceneMeshes = new Map();   // entity id → mesh
 const sceneTrails = new Map();   // entity id → line
+const wakeMeshes  = new Map();   // entity id → propeller-wash wedge
 let chartPlane = null;
 
 // World-Y range of interest: just above the waterline down to the recorded
@@ -2259,7 +2267,42 @@ function bathymetryColor(d) {
   if (d <= 200) return _lerpColor(_BATHY_MID,     _BATHY_DEEP, (d - 50) / 150);
   return _BATHY_DEEP;
 }
+// Seafloor depth source toggle (cycled by the header "Depth:" button / G):
+//   • pinger  (default) — only the seabed the crew actually pinged with
+//     the depth gauge. The recorder emits `depth_ping` events (uboat
+//     gauge press); each ping reveals a small patch and they accumulate
+//     as playback advances. Recordings without ping events (older DLLs)
+//     fall back to a tight live spot under each active boat.
+//   • trailing — the rolling ~1 km reveal around active boats (legacy).
+//   • full     — the entire surveyed seafloor at once, no gating.
+let bathyMode = "pinger";
+const BATHY_MODES = ["pinger", "trailing", "full"];
+const BATHY_MODE_LABEL = { pinger: "Pinger", trailing: "Trailing", full: "Full survey" };
+const PINGER_RADIUS_M = 140;     // patch revealed per gauge read / live spot
+let _depthPings = null;          // [{x,z,t}] from depth_ping events, lazy
+function depthPings() {
+  if (_depthPings) return _depthPings;
+  _depthPings = [];
+  if (data && Array.isArray(data.events)) {
+    for (const ev of data.events) {
+      if (ev && ev.type === "depth_ping" && ev.x != null && ev.z != null)
+        _depthPings.push({ x: ev.x, z: ev.z, t: ev.t != null ? ev.t : 0 });
+    }
+  }
+  return _depthPings;
+}
+function _writeBathyCell(positions, colors, n, cell) {
+  positions[n * 3 + 0] = cell.x;
+  positions[n * 3 + 1] = stretchY(-cell.depth) + 0.5;
+  positions[n * 3 + 2] = cell.z;
+  const c = bathymetryColor(cell.depth);
+  colors[n * 3 + 0] = c.r;
+  colors[n * 3 + 1] = c.g;
+  colors[n * 3 + 2] = c.b;
+}
+
 function buildBathymetry() {
+  _depthPings = null;   // re-collect from the freshly loaded recording
   if (bathymetryMesh) {
     scene3d.remove(bathymetryMesh);
     bathymetryMesh.geometry.dispose();
@@ -2341,24 +2384,61 @@ function updateBathymetry() {
   }
   const positions = bathymetryMesh.geometry.attributes.position.array;
   const colors    = bathymetryMesh.geometry.attributes.color.array;
-  const r2 = BATHY_REVEAL_RADIUS_M * BATHY_REVEAL_RADIUS_M;
   let n = 0;
-  for (const cell of _bathymetryCells) {
-    if (cell.t > currentT) continue;
-    let inside = false;
-    for (const lens of lenses) {
-      const dx = cell.x - lens.x, dz = cell.z - lens.z;
-      if (dx * dx + dz * dz <= r2) { inside = true; break; }
+
+  if (bathyMode === "full") {
+    // Entire surveyed seafloor at once — no time gate, no proximity.
+    for (const cell of _bathymetryCells) {
+      _writeBathyCell(positions, colors, n, cell);
+      n++;
     }
-    if (!inside) continue;
-    positions[n * 3 + 0] = cell.x;
-    positions[n * 3 + 1] = stretchY(-cell.depth) + 0.5;
-    positions[n * 3 + 2] = cell.z;
-    const c = bathymetryColor(cell.depth);
-    colors[n * 3 + 0] = c.r;
-    colors[n * 3 + 1] = c.g;
-    colors[n * 3 + 2] = c.b;
-    n++;
+  } else if (bathyMode === "pinger") {
+    const pr2 = PINGER_RADIUS_M * PINGER_RADIUS_M;
+    const pings = depthPings();
+    if (pings.length) {
+      // Real gauge reads: every ping up to currentT reveals its patch and
+      // they persist (the survey builds up as the crew sounds).
+      for (const cell of _bathymetryCells) {
+        if (cell.t > currentT) continue;
+        let near = false;
+        for (const p of pings) {
+          if (p.t > currentT) continue;
+          const dx = cell.x - p.x, dz = cell.z - p.z;
+          if (dx * dx + dz * dz <= pr2) { near = true; break; }
+        }
+        if (!near) continue;
+        _writeBathyCell(positions, colors, n, cell);
+        n++;
+      }
+    } else {
+      // No ping events in this recording (pre-depth-gauge DLL): best-effort
+      // live spot directly under each active boat, no persistent trail.
+      for (const cell of _bathymetryCells) {
+        if (cell.t > currentT) continue;
+        let near = false;
+        for (const lens of lenses) {
+          const dx = cell.x - lens.x, dz = cell.z - lens.z;
+          if (dx * dx + dz * dz <= pr2) { near = true; break; }
+        }
+        if (!near) continue;
+        _writeBathyCell(positions, colors, n, cell);
+        n++;
+      }
+    }
+  } else {
+    // trailing — legacy rolling reveal around active boats.
+    const r2 = BATHY_REVEAL_RADIUS_M * BATHY_REVEAL_RADIUS_M;
+    for (const cell of _bathymetryCells) {
+      if (cell.t > currentT) continue;
+      let inside = false;
+      for (const lens of lenses) {
+        const dx = cell.x - lens.x, dz = cell.z - lens.z;
+        if (dx * dx + dz * dz <= r2) { inside = true; break; }
+      }
+      if (!inside) continue;
+      _writeBathyCell(positions, colors, n, cell);
+      n++;
+    }
   }
   bathymetryMesh.geometry.attributes.position.needsUpdate = true;
   bathymetryMesh.geometry.attributes.color.needsUpdate    = true;
@@ -4043,9 +4123,15 @@ function prettifyBoidName(raw) {
   const paren = s.indexOf("(");
   if (paren > 0) s = s.slice(0, paren).trim();
   if (s.includes(" ")) return s;
-  s = s.replace(/_/g, " ");
+  s = s.replace(/_/g, " ").trim();
   if (!s) return "";
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  // Title-case each word; leave a pure-number token (the spawn index)
+  // alone so "heavy_tanker_27" → "Heavy Tanker 27", not "Heavy Tanker 27"
+  // mangled into "27" casing.
+  return s.split(/\s+/)
+          .map(w => /^\d+$/.test(w) ? w
+                                    : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(" ");
 }
 
 // Compact a prettified name for the floating in-scene label so the map
@@ -4273,6 +4359,63 @@ function ensureSunkBoidLabel(id, tr) {
   pinSpriteToCamera(spr, 260, 32);
 }
 
+// ── Propeller wash / wake ──────────────────────────────────────────────
+// A translucent additive wedge that trails astern of anything under way.
+// One shared unit geometry (apex at the entity, base 1 unit behind,
+// half-unit wide) scaled per-frame by speed; opacity shimmers so it reads
+// as churning water rather than a static cone. Surface ships float their
+// wake on the waterline; submerged torpedoes/u-boats trail it at depth.
+const _WAKE_GEO = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
+     0, 0,  0,     // apex — at the entity
+    -0.5, 0, -1,   // astern-left
+     0.5, 0, -1,   // astern-right
+  ]), 3));
+  g.computeVertexNormals();
+  return g;
+})();
+function _wakeParams(kind) {
+  // minKn: speed below which no wake; lenK: metres of wake per knot;
+  // wid: wedge width (m); col: tint; surface: pin to waterline y=0.
+  if (kind === "t") return { minKn: 1,   lenK: 5,  wid: 5,  col: 0xbfefff, surface: false };
+  if (kind === "u") return { minKn: 0.5, lenK: 8,  wid: 13, col: 0xbfd8ff, surface: false };
+  if (kind === "e") return { minKn: 1,   lenK: 6,  wid: 17, col: 0xe6f4ff, surface: true  };
+  return                   { minKn: 1,   lenK: 5,  wid: 22, col: 0xe6f4ff, surface: true  }; // merchant
+}
+function updateWake(id, kind, snap, mesh, yaw) {
+  const sp = (snap && snap.s != null) ? snap.s : 0;
+  const p  = _wakeParams(kind);
+  let w = wakeMeshes.get(id);
+  if (sp < p.minKn) { if (w) w.visible = false; return; }
+  if (!w) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: p.col, transparent: true, opacity: 0.2,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    w = new THREE.Mesh(_WAKE_GEO, mat);
+    w.renderOrder = 30;
+    w.frustumCulled = false;
+    wakeMeshes.set(id, w);
+    scene3d.add(w);
+  }
+  w.visible = true;
+  const lenM = Math.min(p.lenK * sp, p.lenK * 25);   // cap so flank speed doesn't streak the map
+  w.scale.set(p.wid, 1, lenM);
+  const wy = p.surface ? (stretchY(0) + 0.3) : mesh.position.y;
+  w.position.set(mesh.position.x, wy, mesh.position.z);
+  w.rotation.y = yaw;   // local -Z = astern, same convention as the hull
+  // Churn shimmer (only advances while playing — paused frames don't
+  // re-render, so this costs nothing at idle).
+  const t = performance.now() * 0.006;
+  w.material.opacity = 0.16 + 0.10 * Math.abs(Math.sin(t + (mesh.position.x % 7)));
+}
+function disposeWake(id) {
+  const w = wakeMeshes.get(id);
+  if (w) { scene3d.remove(w); w.material.dispose(); wakeMeshes.delete(id); }
+}
+
 function meshForEntity(id, kind, snap) {
   let mesh;
   // For all elongated shapes we bake a rotation into the geometry so the
@@ -4354,11 +4497,35 @@ function meshForEntity(id, kind, snap) {
     const mat = new THREE.MeshLambertMaterial({ color: kind === "m" ? 0xc084fc : 0xef4444 });
     mesh = new THREE.Mesh(geo, mat);
   } else if (kind === "t") {
-    // Torpedo: small bright cylinder
-    const geo = new THREE.CylinderGeometry(0.6, 0.6, 7, 6);
-    geo.rotateX(Math.PI / 2);   // height +Y -> +Z
-    const mat = new THREE.MeshLambertMaterial({ color: 0xfacc15 });
-    mesh = new THREE.Mesh(geo, mat);
+    // Torpedo: a proper fish silhouette — rounded nose, cylindrical body,
+    // tapered tail, and a little 4-blade propeller. Built as a Group so
+    // the parts keep their materials; the natural axis is +Z (north) so
+    // mesh.rotation.y = yaw works exactly like the other entities. Total
+    // length ~7 m, radius ~0.5 m (true-ish; the zoom-scaler enlarges it
+    // when the camera pulls back so it stays visible).
+    const tMat = new THREE.MeshLambertMaterial({ color: 0xfacc15, emissive: 0x6b5e10, emissiveIntensity: 0.4 });
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 5.0, 10), tMat);
+    body.rotation.x = Math.PI / 2;            // long axis -> +Z
+    body.position.z = 0.2;
+    g.add(body);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 8), tMat);
+    nose.scale.set(1, 1, 1.6);                // slightly ogive
+    nose.position.z = 2.7;
+    g.add(nose);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.2, 10), tMat);
+    tail.rotation.x = -Math.PI / 2;           // taper points astern (-Z)
+    tail.position.z = -2.9;
+    g.add(tail);
+    const propMat = new THREE.MeshLambertMaterial({ color: 0xb45309 });
+    for (let b = 0; b < 4; b++) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.9, 0.05), propMat);
+      blade.position.z = -3.5;
+      blade.rotation.z = b * Math.PI / 2;
+      g.add(blade);
+    }
+    g.userData.spinner = g.children.slice(-4);  // blades, spun in update3D
+    mesh = g;
   } else if (kind === "d") {
     // Depth charge: yellow spiky-mine glyph (the same shape used for
     // exploded DC markers on the seabed, just recoloured) rather than a
@@ -4507,6 +4674,25 @@ function update3D() {
     // must follow the motion, which this does.
     const yaw = ((snap.h || 0) * Math.PI) / 180;
     mesh.rotation.y = yaw;
+    // Torpedoes are only ~7 m long — invisible once the camera pulls back
+    // to convoy/map scale. Scale toward a roughly constant apparent size
+    // (proportional to camera distance), never below true size, capped so
+    // an extreme zoom-out doesn't balloon it absurdly.
+    if (tr.kind === "t") {
+      const dCam = camera3d.position.distanceTo(mesh.position);
+      let sc = Math.max(1, (dCam * 0.014) / 7);
+      if (sc > 70) sc = 70;
+      mesh.scale.setScalar(sc);
+      // Spin the propeller blades while the fish is running.
+      if (mesh.userData && mesh.userData.spinner &&
+          snap && snap.s != null && snap.s > 0.5) {
+        for (const bl of mesh.userData.spinner) bl.rotation.z += 0.6;
+      }
+    }
+    // Propeller wash / wake for anything under way.
+    if (tr.kind === "t" || tr.kind === "u" || tr.kind === "e" || tr.kind === "m") {
+      updateWake(id, tr.kind, snap, mesh, yaw);
+    }
     seen.add(id);
   }
 
@@ -4514,6 +4700,7 @@ function update3D() {
   // aren't yet alive.
   for (const [id, mesh] of sceneMeshes) {
     if (!seen.has(id)) {
+      disposeWake(id);
       scene3d.remove(mesh);
       sceneMeshes.delete(id);
       const lbl = labelSprites.get(id);
@@ -4974,7 +5161,10 @@ function updateTracks3D() {
       // forced to grey + low opacity so they read as duds. Other kinds
       // keep a flat colour.
       const isUboat = tr.kind === "u";
-      const isMissedTorp = tr.kind === "t" && !hitTorpedoIds.has(id);
+      // Created live regardless — the "missed" (grey/dud) styling is
+      // decided per-frame below, only once the run has actually concluded.
+      // Baking it at creation greyed in-flight fish as duds immediately.
+      const isMissedTorp = false;
       // LineDashedMaterial so we can swap dashSize/gapSize per frame based
       // on the entity's current speed (dotted/dashed/solid = slow/med/fast).
       // Solid lines just use a huge dashSize so the gap never appears.
@@ -5002,6 +5192,23 @@ function updateTracks3D() {
       scene3d.add(line);
     }
     line.visible = true;
+
+    // Torpedo "missed" styling, re-evaluated every frame: a fish is only a
+    // dud once it produced no torpedo_hit AND playback is past its last
+    // sample (run finished) — same gate as the "Missed" label. While in
+    // flight it keeps the live colour/opacity. Materials are cached, so
+    // this must run per-frame to recover once the determination changes.
+    if (tr.kind === "t") {
+      const lastT  = samples.length ? samples[samples.length - 1].t : 0;
+      const missed = !hitTorpedoIds.has(id) && currentT >= lastT;
+      if (missed) {
+        line.material.color.setHex(0x6b7280);
+        line.material.opacity = 0.35;
+      } else {
+        line.material.color.set(style.color);
+        line.material.opacity = style.opacity;
+      }
+    }
 
     // Resolve the surfaced + dived RGB triples once per frame for uboats.
     let surfRGB = null, diveRGB = null;
@@ -5137,7 +5344,9 @@ loadData = function(json) {
     for (const [id, spr]  of insigniaSprites) { scene3d.remove(spr); spr.material.dispose(); }
     for (const [id, e]    of uboatGlows)    { scene3d.remove(e.halo); e.halo.material.dispose(); }
     for (const [k,  p]    of damagePopups)  { scene3d.remove(p.sprite); p.sprite.material.map.dispose(); p.sprite.material.dispose(); }
+    for (const [id, w]    of wakeMeshes)    { scene3d.remove(w); w.material.dispose(); }
   }
+  wakeMeshes.clear();
   sceneMeshes.clear();
   eventSprites.clear();
   statusSprites.clear();
@@ -5479,10 +5688,12 @@ function tooltipForHover(hov) {
     const owner = launch.owner != null ? crewIdxBoatName(launch.owner) : "?";
     const typeStr  = launch.typeIdx != null ? TORP_TYPE_NAMES[launch.typeIdx] || ("type "+launch.typeIdx) : "—";
     const speedSlot = launch.speedSet != null ? TORP_SPEED_NAMES[launch.speedSet] || ("set "+launch.speedSet) : "—";
-    // Show the actual knots value alongside the enum slot when the recorder
-    // captured it. Legacy recordings only have the slot — fall back to it.
+    // Prefer the actual captured knots. The speedSet enum labels
+    // (TORP_SPEED_NAMES) are themselves in knots, so showing both gave a
+    // redundant "44 kn · 44 kn" — only fall back to the slot label for
+    // legacy recordings that lack the measured value.
     const speedStr = launch.speedKn != null
-      ? `${launch.speedKn.toFixed(0)} kn · ${speedSlot}`
+      ? `${launch.speedKn.toFixed(0)} kn`
       : speedSlot;
     const pistol   = launch.magnetic ? "magnetic" : "impact";
     const gyroDeg  = launch.gyro != null ? launch.gyro.toFixed(0) + "°" : "—";
@@ -5509,7 +5720,7 @@ function tooltipForHover(hov) {
     if (tgtId) {
       const tr = tracks[tgtId];
       const nm = tr && tr.samples[0] && tr.samples[0].n;
-      targetName = nm || (tr && tr.kind === "e" ? "Escort" : "Merchant");
+      targetName = (nm ? prettifyBoidName(String(nm)) : "") || (tr && tr.kind === "e" ? "Escort" : "Merchant");
     }
     const dTOI = deltaToTOI(ev.t);
     return `<div class="hd">${owner} — Hit on ${targetName}</div>
@@ -5539,9 +5750,28 @@ function tooltipForHover(hov) {
     const tr = id ? tracks[id] : null;
     const nm = tr && tr.samples[0] && tr.samples[0].n;
     const kind = tr ? (tr.kind === "e" ? "Escort" : "Merchant") : "Ship";
-    const heading = nm || kind;
+    const heading = (nm ? prettifyBoidName(String(nm)) : "") || kind;
     const hits = (id && hitsByTarget[id]) || [];
     let html = `<div class="hd">${heading}${hov.kind === "sunk" ? " — sunk" : ""}</div>`;
+    // Live state at the scrubbed time — only for a hovered hull (not a
+    // post-mortem "sunk" event marker, where current speed is meaningless).
+    if (hov.kind === "target" && id &&
+        currentT >= firstSampleTimeFor(id) && currentT <= lastSampleTimeFor(id)) {
+      const snap = entitySnapshot(id, currentT);
+      if (snap) {
+        if (snap.s != null)
+          html += `<div class="row"><span class="k">Speed</span><span>${snap.s.toFixed(1)} kn</span></div>`;
+        if (snap.h != null) {
+          // Invert exactly like updateConvoyStats(): the raw recorded
+          // eulerAngles.y reads as the mirror of the rendered bearing, so
+          // this matches both the on-screen hull and the convoy readout.
+          const hdg = (360 - (((snap.h % 360) + 360) % 360)) % 360;
+          html += `<div class="row"><span class="k">Heading</span><span>${hdg.toFixed(0)}°</span></div>`;
+        }
+        if (snap.hp != null)
+          html += `<div class="row"><span class="k">Hull</span><span>${Math.round(snap.hp * 100)}%</span></div>`;
+      }
+    }
     if (hits.length) {
       html += `<div class="row"><span class="k">Hits</span><span>${hits.length}</span></div>`;
       for (const h of hits) {
@@ -5607,6 +5837,7 @@ function _scheduleHover(e) {
     if (!html) { if (_tooltipEl) _tooltipEl.style.display = "none"; return; }
     if (_tooltipEl) {
       _tooltipEl.innerHTML = html;
+      _tooltipEl.classList.toggle("big", hov.kind === "torp");
       const rect = _stageEl.getBoundingClientRect();
       _tooltipEl.style.left = (x - rect.left + 14) + "px";
       _tooltipEl.style.top  = (y - rect.top  + 14) + "px";
@@ -5655,9 +5886,24 @@ function applyTopDownMode(on) {
   });
 }
 if (_topDownBtn) _topDownBtn.addEventListener("click", () => applyTopDownMode(!_topDownMode));
+
+// Seafloor depth-source cycle (pinger → trailing → full survey).
+const _depthModeBtn = $("depthModeBtn");
+function applyDepthMode(mode) {
+  bathyMode = mode;
+  if (_depthModeBtn) _depthModeBtn.textContent = "Depth: " + (BATHY_MODE_LABEL[mode] || mode);
+  markRender3DDirty();
+}
+function cycleDepthMode() {
+  const i = BATHY_MODES.indexOf(bathyMode);
+  applyDepthMode(BATHY_MODES[(i + 1) % BATHY_MODES.length]);
+}
+if (_depthModeBtn) _depthModeBtn.addEventListener("click", cycleDepthMode);
+
 window.addEventListener("keydown", (e) => {
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT")) return;
   if (e.code === "KeyT") { e.preventDefault(); applyTopDownMode(!_topDownMode); }
+  if (e.code === "KeyG") { e.preventDefault(); cycleDepthMode(); }
 });
 
 // Clickable U-boat list. Rebuilt on every fresh load so it reflects the
