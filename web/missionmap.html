@@ -305,6 +305,19 @@
   }
   #uboatList button:hover { border-color: var(--amber); }
   #uboatList button .nameRow { display: flex; align-items: center; gap: 6px; }
+  /* Per-boat Follow toggle — small inline button on the right of the name row */
+  #uboatList .followBtn {
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 10px; font-family: inherit;
+    background: rgba(19,26,31,0.85);
+    color: var(--fg); border: 1px solid var(--line); border-radius: 3px;
+    cursor: pointer;
+  }
+  #uboatList .followBtn:hover { border-color: var(--amber); }
+  #uboatList .followBtn.active {
+    background: var(--amber); color: #1a1a1a; border-color: var(--amber);
+  }
   #uboatList button .dot {
     display: inline-block; width: 10px; height: 10px;
     border-radius: 50%;
@@ -325,6 +338,23 @@
 
   /* Bottom-left scale bar overlay — pixel width recalculated each frame
      so it always reads a "nice" round metres value at the current zoom. */
+  /* Bottom-right floating clock — game time on top, recorded wall-clock
+     below. Both advance with the playback scrubber. */
+  #bottomRightClock {
+    position: absolute; right: 14px; bottom: 14px;
+    padding: 6px 10px;
+    background: rgba(19,26,31,0.85);
+    border: 1px solid var(--line); border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px; line-height: 1.5;
+    color: var(--fg);
+    pointer-events: auto;
+    z-index: 40;
+  }
+  #bottomRightClock .brLbl { color: var(--dim); margin-right: 4px; }
+  #bottomRightClock .brGt  { font-weight: 600; }
+  #bottomRightClock .brRec { color: var(--fg); }
+
   #scaleBar {
     position: absolute;
     left: 14px; bottom: 14px;
@@ -377,14 +407,14 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-19c</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-20i</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
     <span class="meta">Game time: <span id="gameTime">--:--</span> <span id="gameDate"></span></span>
-    <span class="meta">Recorded: <span id="recReal">--</span></span>
     <span class="meta" title="Mean speed &amp; heading of merchants still afloat at full HP. Reads 'Alerted' when any escort has detected something.">Convoy avg: <span id="convoyAvg">--</span> · <span id="convoyHead">--</span></span>
     <div id="hud3dBtns">
       <button id="depthModeBtn" title="Cycle seafloor depth source (G)">Depth: Pinger</button>
+      <button id="measureBtn"   title="Measure surface distance — click two points (M)">Measure</button>
       <button id="resetViewBtn" title="Reset orientation (R)">Reset view</button>
       <button id="fitBoundsBtn" title="Fit recording (F)">Fit</button>
       <button id="topDownBtn"   title="Toggle 2D top-down / 3D oblique view (T)">Top-down</button>
@@ -420,6 +450,21 @@
           <div class="row"><span>🦀</span>&nbsp;Aground (sitting on bottom)</div>
           <div class="row"><span>⚓</span>&nbsp;Anchored on surface</div>
         </div>
+      </div>
+      <div class="panel" id="toiPanel">
+        <button class="panelHeader" data-target="toiBody" type="button">
+          <span class="chev">▾</span> TOIs <span class="panelHint">(time-of-impact)</span>
+        </button>
+        <div class="panelBody" id="toiBody">
+          <div id="toiList"></div>
+          <button id="toiAdd" type="button">+ Add TOI</button>
+        </div>
+      </div>
+      <div class="panel" id="uboatStatsPanel">
+        <button class="panelHeader" data-target="uboatStatsBody" type="button">
+          <span class="chev">▾</span> U-boat hits
+        </button>
+        <div class="panelBody" id="uboatStatsBody"></div>
       </div>
     </div>
     <div id="drop">Drop a MissionMap_*.json file here · drop or paste a chart screenshot to overlay it</div>
@@ -458,15 +503,6 @@
         <div><span class="hint-key">R</span> reset · <span class="hint-key">F</span> fit</div>
       </div>
       <div id="sidebarRight">
-        <div class="panel" id="toiPanel">
-          <button class="panelHeader" data-target="toiBody" type="button">
-            <span class="chev">▾</span> TOIs <span class="panelHint">(time-of-impact)</span>
-          </button>
-          <div class="panelBody" id="toiBody">
-            <div id="toiList"></div>
-            <button id="toiAdd" type="button">+ Add TOI</button>
-          </div>
-        </div>
         <div class="panel" id="trailsPanel">
           <button class="panelHeader" data-target="trailsBody" type="button">
             <span class="chev">▾</span> Trails
@@ -477,11 +513,13 @@
             <label class="toggle"><input type="checkbox" id="trailEscortOn" checked> Escorts</label>
           </div>
         </div>
-        <div class="panel" id="uboatStatsPanel">
-          <button class="panelHeader" data-target="uboatStatsBody" type="button">
-            <span class="chev">▾</span> U-boat hits
-          </button>
-          <div class="panelBody" id="uboatStatsBody"></div>
+      </div>
+      <div id="bottomRightClock">
+        <div class="brGt"  title="Game time at the current playback position (accounts for the game-time rate)">
+          <span class="brLbl">Game</span> <span id="brGameTime">--:--:--</span>
+        </div>
+        <div class="brRec" title="Real-world wall-clock at the current playback position (recording start + elapsed playback seconds)">
+          <span class="brLbl">Recorded</span> <span id="brRecorded">--</span>
         </div>
       </div>
     </div>
@@ -863,6 +901,8 @@ function loadData(json) {
       // not render downstream.
       const pt = { t: s.t, x: e.x, z: e.z, y: e.y, h: e.h,
                    d: e.d, s: e.s, n: e.n,
+                   pi: e.pi, ro: e.ro,
+                   bp: e.bp,
                    bat: e.bat, uk: e.uk, f: e.f, al: e.al, hp: e.hp };
       tracks[e.id].samples.push(pt);
       if (!bounds) bounds = { minX: e.x, maxX: e.x, minZ: e.z, maxZ: e.z };
@@ -960,6 +1000,8 @@ function loadData(json) {
   // (merchant/escort) sample at the hit's time within HIT_LINK_RADIUS_M.
   // Used to build per-target hit lists and to label hit popups with
   // "[ship] @ HH:MM:SS".
+  buildCrewIdxName();     // crewIdx → real boat name from the actual tracks
+
   hitsByTarget = {};      // boidId -> [hitEvent, ...]
   targetByHitId = {};     // torpedo id -> boidId
   const HIT_LINK_RADIUS_M = 80;
@@ -991,6 +1033,9 @@ function loadData(json) {
   // Header metadata: in-game date and the IRL wall clock of the recording.
   const gd = $("gameDate");
   if (gd) gd.textContent = data.gameDate ? "· " + data.gameDate : "";
+  // Note: the old #recReal header field has been replaced by the
+  // bottom-right floating clock (updateBottomRightClock) — the lookup
+  // below stays as a safe no-op if the legacy element ever shows up.
   const rr = $("recReal");
   if (rr) {
     const raw = data.missionStartReal || data.missionEndReal || "";
@@ -998,6 +1043,7 @@ function loadData(json) {
     rr.textContent = (formatRecordedTime(raw) || "--") + suffix;
   }
   updateGameTime();
+  updateBottomRightClock();
   $("drop").style.display = "none";
   fitBounds();
   draw();
@@ -1046,6 +1092,7 @@ function fmtT(t) {
 function updateScrubLabel() {
   $("scrub").textContent = fmtT(currentT) + " / " + fmtT(totalT);
   updateGameTime();
+  updateBottomRightClock();
   updateConvoyStats();
   updateUboatList();
 }
@@ -1155,6 +1202,54 @@ function updateGameTime() {
     String(s).padStart(2, "0");
 }
 
+// Bottom-right floating clock. Two lines that advance with playback:
+//   • Game time — same formula as updateGameTime (uses the recording's
+//     measured game-time rate so time-acceleration is honoured).
+//   • Recorded wall-clock — missionStartReal + currentT real seconds.
+//     1:1 with playback because real time elapsed during recording was
+//     always real seconds, regardless of in-game time acceleration.
+const _MONTH3 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function updateBottomRightClock() {
+  const brGt  = $("brGameTime");
+  const brRec = $("brRecorded");
+  if (!data) {
+    if (brGt)  brGt.textContent  = "--:--:--";
+    if (brRec) brRec.textContent = "--";
+    return;
+  }
+  if (brGt) {
+    if (data.gameTimeStartHours == null) brGt.textContent = "--:--:--";
+    else {
+      const k = gameTimeRate();
+      const anchorSec  = (data._uboatT0 || 0) + currentT;
+      const hoursTotal = data.gameTimeStartHours + k * anchorSec / 3600;
+      const h  = ((Math.floor(hoursTotal) % 24) + 24) % 24;
+      const mF = (hoursTotal - Math.floor(hoursTotal)) * 60;
+      const m  = Math.floor(mF);
+      const s  = Math.floor((mF - m) * 60);
+      brGt.textContent =
+        String(h).padStart(2, "0") + ":" +
+        String(m).padStart(2, "0") + ":" +
+        String(s).padStart(2, "0");
+    }
+  }
+  if (brRec) {
+    if (!data.missionStartReal) brRec.textContent = "--";
+    else {
+      const start = new Date(data.missionStartReal);
+      if (isNaN(start.getTime())) brRec.textContent = data.missionStartReal;
+      else {
+        const at = new Date(start.getTime() + currentT * 1000);
+        brRec.textContent =
+          _MONTH3[at.getMonth()] + " " + at.getDate() + ", " +
+          String(at.getHours()).padStart(2, "0") + ":" +
+          String(at.getMinutes()).padStart(2, "0") + ":" +
+          String(at.getSeconds()).padStart(2, "0");
+      }
+    }
+  }
+}
+
 function entitySnapshot(id, t) {
   const tr = tracks[id];
   if (!tr) return null;
@@ -1178,6 +1273,9 @@ function entitySnapshot(id, t) {
     // endpoints have it, fall through otherwise.
     y: (a.y != null && b.y != null) ? a.y + (b.y - a.y) * u : (a.y != null ? a.y : b.y),
     h: a.h, d: a.d, s: a.s, n: a.n,
+    // Tilt (pitch / roll) — latched from the earlier sample, same
+    // reasoning as the others: only changes on real attitude changes.
+    pi: a.pi, ro: a.ro,
     // Latched state — picking the earlier sample's value is fine; these
     // only change on game-state transitions and the BOID_SAMPLE_INTERVAL
     // (~15 s) is coarse enough that interpolating would be misleading.
@@ -1524,9 +1622,12 @@ function draw() {
   for (const id in tracks) {
     const tr = tracks[id];
     // Don't draw before the entity's first recorded sample (e.g. torpedoes
-    // shouldn't be visible before they were fired) or after its last.
+    // shouldn't be visible before they were fired). After the last sample
+    // we hide DURING playback (track ended early — usually a sinking) but
+    // keep visible at end-of-playback so the final frame still shows
+    // where everyone ended up.
     if (currentT < firstSampleTimeFor(id)) continue;
-    if (currentT > lastSampleTimeFor(id)) continue;
+    if (currentT > lastSampleTimeFor(id) && currentT < totalT - 0.5) continue;
     const snap = entitySnapshot(id, currentT);
     if (!snap) continue;
     const [sx, sy] = w2s(snap.x, snap.z);
@@ -1984,6 +2085,7 @@ let scene3d, camera3d, renderer3d, controls3d;
 const sceneMeshes = new Map();   // entity id → mesh
 const sceneTrails = new Map();   // entity id → line
 const wakeMeshes  = new Map();   // entity id → propeller-wash wedge
+const searchLights = new Map();  // boid id → search-light cone (visible when alerted)
 let chartPlane = null;
 
 // World-Y range of interest: just above the waterline down to the recorded
@@ -2315,22 +2417,33 @@ function buildBathymetry() {
   for (const id in tracks) {
     const tr = tracks[id];
     if (tr.kind !== "u") continue;
-    for (const s of tr.samples) {
-      if (s.d == null || s.uk == null) continue;
-      const seabed = s.d + s.uk;
-      if (!isFinite(seabed) || seabed <= 0) continue;
-      const ix = Math.round(s.x / BATHY_CELL_M);
-      const iz = Math.round(s.z / BATHY_CELL_M);
+    // Helper: add one bin contribution to the grid.
+    const add = (wx, wz, depth, t) => {
+      if (!isFinite(depth) || depth <= 0) return;
+      const ix = Math.round(wx / BATHY_CELL_M);
+      const iz = Math.round(wz / BATHY_CELL_M);
       const key = ix + "," + iz;
       let cell = grid.get(key);
       if (!cell) {
-        cell = { sum: 0, count: 0, x: ix * BATHY_CELL_M, z: iz * BATHY_CELL_M, t: s.t };
+        cell = { sum: 0, count: 0, x: ix * BATHY_CELL_M, z: iz * BATHY_CELL_M, t };
         grid.set(key, cell);
-      } else if (s.t < cell.t) {
-        cell.t = s.t;        // earliest sample wins as "discovered" time
+      } else if (t < cell.t) {
+        cell.t = t;
       }
-      cell.sum   += seabed;
+      cell.sum   += depth;
       cell.count += 1;
+    };
+    for (const s of tr.samples) {
+      // Centre probe (the legacy d + uk path — exactly under the boat).
+      if (s.d != null && s.uk != null) add(s.x, s.z, s.d + s.uk, s.t);
+      // Ring probes around the boat (1.9.1+ recordings). Each triple is
+      // [dx, dz, absSeabedDepth] in metres.
+      if (Array.isArray(s.bp)) {
+        for (const p of s.bp) {
+          if (!p || p.length < 3) continue;
+          add(s.x + p[0], s.z + p[1], p[2], s.t);
+        }
+      }
     }
   }
   if (grid.size === 0) return;
@@ -2353,7 +2466,11 @@ function buildBathymetry() {
   geo.setAttribute("color",    new THREE.BufferAttribute(colors,    3));
   geo.setDrawRange(0, 0);
   const mat = new THREE.PointsMaterial({
-    size: BATHY_CELL_M * 1.4,
+    // Visual sprite size — tightened from 1.4× the bin width to 0.7×
+    // so the depth squares read as small individual probes rather than
+    // a coarse painted carpet. The ring probes in 1.9.1+ recordings
+    // pack the cloud denser, which makes the smaller sprite work.
+    size: BATHY_CELL_M * 0.7,
     vertexColors: true,
     transparent: true, opacity: 0.85,
     sizeAttenuation: true,
@@ -2378,7 +2495,9 @@ function updateBathymetry() {
     const tr = tracks[id];
     if (tr.kind !== "u") continue;
     if (currentT < firstSampleTimeFor(id)) continue;
-    if (currentT > lastSampleTimeFor(id))  continue;
+    // Keep using the boat as a bathymetry lens at end-of-playback so
+    // the seafloor stays revealed under its final position.
+    if (currentT > lastSampleTimeFor(id) && currentT < totalT - 0.5) continue;
     const snap = entitySnapshot(id, currentT);
     if (snap) lenses.push({ x: snap.x, z: snap.z });
   }
@@ -2983,7 +3102,12 @@ function buildDepthMarkers() {
   // ~2× the previous sizing so the depth numbers are easier to read.
   const labelSpan = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 0.030;
 
+  // Clip to the recording's play-area bounds — markers far outside the
+  // mission scene would clutter the seafloor with chart noise from
+  // regions the boats never visited.
   for (const m of markers.values()) {
+    if (typeof m.x === "number" && typeof m.z === "number" &&
+        (m.x < b.minX || m.x > b.maxX || m.z < b.minZ || m.z > b.maxZ)) continue;
     const txt = (m.label && m.label.length > 0)
       ? m.label
       : (typeof m.depth === "number" && m.depth >= 0 ? m.depth.toString() : "");
@@ -3921,6 +4045,25 @@ function trendArrow(id, t, lookbackSec, field, threshold) {
   return "";
 }
 
+// Like trendArrow but also returns a colour band keyed to the rate-of-
+// change magnitude. The U-boat label uses this to make a fast crash-
+// dive's depth arrow read in red while a slow trim adjustment stays
+// in the field's normal colour. `color: null` means "use the field's
+// own colour"; otherwise it's an explicit hex.
+function trendArrowRich(id, t, lookbackSec, field, threshold) {
+  const past = entitySnapshot(id, Math.max(0, t - lookbackSec));
+  const now  = entitySnapshot(id, t);
+  if (!past || !now || past[field] == null || now[field] == null) return { arrow: "", color: null };
+  const d = now[field] - past[field];
+  const abs = Math.abs(d);
+  if (abs <= threshold) return { arrow: "", color: null };
+  // 2× threshold = "moderate" (yellow), 4× = "fast" (red).
+  let color = null;
+  if      (abs >= threshold * 4) color = "#ff5555";
+  else if (abs >= threshold * 2) color = "#facc15";
+  return { arrow: d > 0 ? "↑" : "↓", color };
+}
+
 function updateUboatLabel3D(id, snap, meshPosition) {
   if (!snap) return;
   const name  = snap.n || "U-?";
@@ -3929,28 +4072,29 @@ function updateUboatLabel3D(id, snap, meshPosition) {
   // Threshold = 1 kn change per 5 s; for a 5 s lookback that's 1.0 kn.
   // Tighter than the old 0.3 so the arrow only flips on actual orders,
   // not every wave-bob fluctuation in the speed sample.
-  const sArrow = trendArrow(id, currentT, 5, "s", 1.0);
+  const sRich = trendArrowRich(id, currentT, 5, "s", 1.0);
+  const sArrow = sRich.arrow;
   // Note: a u-boat _going deeper_ has rising snap.d, which we want to
   // display as ↓ (descending). Invert the trend symbol here.
-  const dRaw   = trendArrow(id, currentT, 3, "d", 0.5);
-  const dArrow = dRaw === "↑" ? "↓" : (dRaw === "↓" ? "↑" : "");
-  const speed = snap.s != null ? snap.s.toFixed(1) + "kn" + sArrow : "";
+  const dRich  = trendArrowRich(id, currentT, 3, "d", 0.5);
+  const dArrow = dRich.arrow === "↑" ? "↓" : (dRich.arrow === "↓" ? "↑" : "");
+  const speed = snap.s != null ? snap.s.toFixed(1) + "kn" : "";
   // Depth: cap past DEPTH_DISPLAY_CAP_M ("300+m"). Also hide entirely
   // when ≤ 2 m gauge — at that point the boat is effectively at the
-  // surface and the readout is just noise.
+  // surface and the readout is just noise. ▼ prefix marks it as "depth"
+  // unambiguously, mirroring the periscope's depth-band indicator.
   const depth = snap.d != null && snap.d > 2
-    ? (snap.d > DEPTH_DISPLAY_CAP_M
-        ? DEPTH_DISPLAY_CAP_M + "+m" + dArrow
-        : snap.d.toFixed(0) + "m" + dArrow)
+    ? "▼" + (snap.d > DEPTH_DISPLAY_CAP_M
+        ? DEPTH_DISPLAY_CAP_M + "+m"
+        : snap.d.toFixed(0) + "m")
     : "";
   // Battery state (0..1, optional). Hide at ≥ 99 % so a fully-charged
   // boat doesn't waste label width — the captain only needs to see the
   // battery once it's actually been used. Show as integer percent.
   const bat   = snap.bat != null && snap.bat < 0.99
                   ? Math.round(snap.bat * 100) + "%" : "";
-  // Depth under keel (m, optional). Missing if the raycast couldn't reach
-  // the seabed at this position.
-  const uk    = snap.uk  != null ? "↧" + snap.uk.toFixed(0) + "m" : "";
+  // Under-keel is no longer a permanent chip on the label — it surfaces
+  // only when the crew pings (depth_ping → floating ping number below).
   // HP percentage. Client-side recordings can't read foreign boats'
   // hp (W_Uboat.hp is not synced) so skip in that case. Boats clamped
   // against uboatHpMax so any game-version full-health value reads 100.
@@ -3981,9 +4125,10 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     if      (snap.bat < 0.15) batColor = "#ff5555";
     else if (snap.bat < 0.40) batColor = "#facc15";
   }
-  // Under-keel warning: red under 15 m clearance (e.g. close to grounding).
-  let   ukColor  = labelColor;
-  if (snap.uk != null && snap.uk < 15) ukColor = "#ff5555";
+  // Arrow colours (yellow/red) come from trendArrowRich and override
+  // the field's own colour when the rate-of-change is high.
+  const sArrowColor = sRich.color || speedColor;
+  const dArrowColor = dRich.color || depthColor;
   // HP colour: green > 75 %, yellow 30–75 %, red < 30 %.
   let   hpColor  = labelColor;
   if (hpPct != null) {
@@ -3992,16 +4137,17 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     else                 hpColor = "#4ade80";
   }
 
-  const key = name + "|" + speed + "|" + depth + "|" + bat + "|" + uk + "|" + hp + "|" +
-              labelColor + "|" + speedColor + "|" + depthColor + "|" +
-              batColor + "|" + ukColor + "|" + hpColor;
+  const key = name + "|" + speed + "|" + sArrow + "|" + depth + "|" + dArrow + "|" + bat + "|" + hp + "|" +
+              labelColor + "|" + speedColor + "|" + sArrowColor + "|" + depthColor + "|" + dArrowColor + "|" +
+              batColor + "|" + hpColor;
 
   let entry = labelSprites.get(id);
   if (!entry) {
     const canvas = document.createElement("canvas");
     // Wider canvas + matching sprite scale below so "U-96  4.8kn↓  123m↓
-    // ⚡91%" doesn't clip the % when every field has its trend arrow on.
-    canvas.width  = 1400;
+    // ⚡91%  ↧50m  ♥87%" doesn't clip the trailing ♥HP when every field
+    // is showing with its trend arrow. 1800 leaves slack for future glyphs.
+    canvas.width  = 1800;
     canvas.height = 128;
     const c2d = canvas.getContext("2d");
     const tex = new THREE.CanvasTexture(canvas);
@@ -4022,7 +4168,7 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     // World-space size of the label. Bigger than before to stay readable
     // at typical viewing distances (zoom does scale these down, which is
     // fine for cluttered scenes).
-    sprite.scale.set(438, 40, 1);   // matches 1400×128 canvas aspect (~10.94:1)
+    sprite.scale.set(562, 40, 1);   // matches 1800×128 canvas aspect (~14.06:1)
     scene3d.add(sprite);
     entry = { sprite, canvas, c2d, texture: tex, lastKey: "" };
     labelSprites.set(id, entry);
@@ -4043,47 +4189,28 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     c2d.strokeStyle = "rgba(0,0,0,0.85)";
     let x = 4;
     const y = entry.canvas.height / 2;
-    const namePart  = name + "  ";
-    const speedPart = speed;
-    const depthPart = depth ? "  " + depth : "";
-    const batPart   = bat   ? "  ⚡" + bat : "";
-    const ukPart    = uk    ? "  " + uk : "";
-    const hpPart    = hp    ? "  ♥" + hp : "";
+    // Helper: stroke+fill one segment with a given colour, advance x.
+    const paint = (text, color) => {
+      if (!text) return;
+      c2d.strokeText(text, x, y);
+      c2d.fillStyle = color;
+      c2d.fillText  (text, x, y);
+      x += c2d.measureText(text).width;
+    };
 
-    // Stroke first, fill on top — per segment so each piece gets its outline.
-    c2d.strokeText(namePart, x, y);
-    c2d.fillStyle = labelColor;
-    c2d.fillText  (namePart, x, y);
-    x += c2d.measureText(namePart).width;
-    if (speedPart) {
-      c2d.strokeText(speedPart, x, y);
-      c2d.fillStyle = speedColor;
-      c2d.fillText  (speedPart, x, y);
-      x += c2d.measureText(speedPart).width;
+    paint(name + "  ", labelColor);
+    if (speed) {
+      paint(speed, speedColor);
+      // Arrow rendered as its own segment so a high-rate trend can show
+      // the arrow in yellow/red without changing the value's colour.
+      if (sArrow) paint(sArrow, sArrowColor);
     }
-    if (depthPart) {
-      c2d.strokeText(depthPart, x, y);
-      c2d.fillStyle = depthColor;
-      c2d.fillText  (depthPart, x, y);
-      x += c2d.measureText(depthPart).width;
+    if (depth) {
+      paint("  " + depth, depthColor);
+      if (dArrow) paint(dArrow, dArrowColor);
     }
-    if (batPart) {
-      c2d.strokeText(batPart, x, y);
-      c2d.fillStyle = batColor;
-      c2d.fillText  (batPart, x, y);
-      x += c2d.measureText(batPart).width;
-    }
-    if (ukPart) {
-      c2d.strokeText(ukPart, x, y);
-      c2d.fillStyle = ukColor;
-      c2d.fillText  (ukPart, x, y);
-      x += c2d.measureText(ukPart).width;
-    }
-    if (hpPart) {
-      c2d.strokeText(hpPart, x, y);
-      c2d.fillStyle = hpColor;
-      c2d.fillText  (hpPart, x, y);
-    }
+    if (bat) paint("  ⚡" + bat, batColor);
+    if (hp) paint("  ♥" + hp, hpColor);
     entry.texture.needsUpdate = true;
     entry.lastKey = key;
   }
@@ -4416,6 +4543,45 @@ function disposeWake(id) {
   if (w) { scene3d.remove(w); w.material.dispose(); wakeMeshes.delete(id); }
 }
 
+// ── Search light when a merchant / escort is alerted ──────────────────
+// snap.al === 1 means the boid has acquired a target. Render a soft
+// additive cone sweeping forward from the bow so the alerted boid reads
+// unambiguously on a busy map, separate from the legend "Alerted" badge.
+const _SL_GEO = (() => {
+  // Cone — default apex at +Y, base at -Y. Rotate so apex is at origin
+  // and the cone opens toward +Z (the hull's forward axis).
+  const g = new THREE.ConeGeometry(120, 1200, 16, 1, true);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0, 600);   // shift so apex sits at the ship, base 1200 m ahead
+  return g;
+})();
+function updateSearchLight(id, kind, snap, mesh, yaw) {
+  const alerted = (kind === "m" || kind === "e") && snap && snap.al === 1;
+  let sl = searchLights.get(id);
+  if (!alerted) { if (sl) sl.visible = false; return; }
+  if (!sl) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xfff3b0, transparent: true, opacity: 0.16,
+      depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    sl = new THREE.Mesh(_SL_GEO, mat);
+    sl.renderOrder = 25;
+    sl.frustumCulled = false;
+    searchLights.set(id, sl);
+    scene3d.add(sl);
+  }
+  sl.visible = true;
+  sl.position.set(mesh.position.x, stretchY(0) + 2, mesh.position.z);
+  // Slow sweep ±20° at ~0.6 Hz; phase per-boid so a convoy doesn't sweep in lockstep.
+  const sweep = 0.35 * Math.sin(performance.now() * 0.004 + (mesh.position.x % 13));
+  sl.rotation.y = yaw + sweep;
+}
+function disposeSearchLight(id) {
+  const sl = searchLights.get(id);
+  if (sl) { scene3d.remove(sl); sl.material.dispose(); searchLights.delete(id); }
+}
+
 function meshForEntity(id, kind, snap) {
   let mesh;
   // For all elongated shapes we bake a rotation into the geometry so the
@@ -4533,6 +4699,18 @@ function meshForEntity(id, kind, snap) {
     // of zoom, and matches the legend's mine convention.
     mesh = makeIconSprite(mineTexture("#facc15"), 28);
     mesh.renderOrder = 5;
+  } else if (kind === "f") {
+    // Flare (Starshell): a bright additive sphere — the iconic burning
+    // illumination round dangling under a parachute. Sized for visibility
+    // at convoy zoom; the additive blend gives it a halo against the
+    // night-blue water.
+    const geo = new THREE.SphereGeometry(40, 14, 12);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xfff3a0, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 30;
   } else {
     return null;
   }
@@ -4588,12 +4766,19 @@ function update3D() {
     if (currentT < firstSampleTimeFor(id))  continue;
 
     // Sink-animation window extends beyond the last sample time for
-    // ships that qualify as sinkings. Outside that window we behave
-    // as before — skip past lastSample → mesh gets disposed below.
+    // ships that qualify as sinkings. Outside that window we used to
+    // skip past lastSample → mesh gets disposed. EXCEPT: at the end of
+    // playback (currentT essentially at totalT) we deliberately clamp
+    // every entity to its last sample so the final frame shows where
+    // everyone ended up instead of an empty map.
     let sinkState = null;
     if (currentT > lastSampleTimeFor(id)) {
       sinkState = sinkAnimState(id, tr, currentT);
-      if (!sinkState) continue;
+      if (!sinkState) {
+        // Mid-recording: track ended early and not a sinking → hide.
+        // End-of-playback: keep the entity parked at its last sample.
+        if (currentT < totalT - 0.5) continue;
+      }
     }
     const snap = entitySnapshot(id, currentT);
     if (!snap) continue;
@@ -4674,13 +4859,26 @@ function update3D() {
     // must follow the motion, which this does.
     const yaw = ((snap.h || 0) * Math.PI) / 180;
     mesh.rotation.y = yaw;
+    // Apply recorded pitch/roll on u-boats so a crash-dive visibly noses
+    // down, a blow-tanks emergency surface noses up, and a heavy turn
+    // shows the hull heeling. Recorder ships pi/ro in degrees ±180; we
+    // use Euler order YXZ so yaw stays the on-water steering direction
+    // and pitch/roll layer on top in the boat's local frame. Other
+    // entities (torpedoes, ships) keep their flat-on-water default —
+    // we don't record their tilt and forcing it to 0 here is implicit.
+    if (tr.kind === "u" && (snap.pi != null || snap.ro != null)) {
+      const pitchRad = ((snap.pi || 0) * Math.PI) / 180;
+      const rollRad  = ((snap.ro || 0) * Math.PI) / 180;
+      mesh.rotation.order = "YXZ";
+      mesh.rotation.set(pitchRad, yaw, rollRad);
+    }
     // Torpedoes are only ~7 m long — invisible once the camera pulls back
     // to convoy/map scale. Scale toward a roughly constant apparent size
     // (proportional to camera distance), never below true size, capped so
     // an extreme zoom-out doesn't balloon it absurdly.
     if (tr.kind === "t") {
       const dCam = camera3d.position.distanceTo(mesh.position);
-      let sc = Math.max(1, (dCam * 0.014) / 7);
+      let sc = Math.max(1, (dCam * 0.021) / 7);
       if (sc > 70) sc = 70;
       mesh.scale.setScalar(sc);
       // Spin the propeller blades while the fish is running.
@@ -4693,6 +4891,10 @@ function update3D() {
     if (tr.kind === "t" || tr.kind === "u" || tr.kind === "e" || tr.kind === "m") {
       updateWake(id, tr.kind, snap, mesh, yaw);
     }
+    // Search-light cone for boids that have acquired a target.
+    if (tr.kind === "m" || tr.kind === "e") {
+      updateSearchLight(id, tr.kind, snap, mesh, yaw);
+    }
     seen.add(id);
   }
 
@@ -4701,6 +4903,7 @@ function update3D() {
   for (const [id, mesh] of sceneMeshes) {
     if (!seen.has(id)) {
       disposeWake(id);
+      disposeSearchLight(id);
       scene3d.remove(mesh);
       sceneMeshes.delete(id);
       const lbl = labelSprites.get(id);
@@ -5015,14 +5218,65 @@ function animate3D() {
   requestAnimationFrame(animate3D);
   if (!playing && !_render3DDirty) return;
   _render3DDirty = false;
+  // Lock the orbit target to the followed boat's current snapshot
+  // BEFORE controls3d.update() so the camera pans alongside the boat
+  // each frame (forward and reverse playback alike).
+  if (followingId && controls3d) {
+    const snap = entitySnapshot(followingId, currentT);
+    if (snap) controls3d.target.set(snap.x, 0, snap.z);
+  }
   controls3d.update();
   update3D();
   updateTracks3D();
   updateEventSprites3D();
   updateBathymetry();
   updateDamagePopups();
+  updatePingFloats();
   renderer3d.render(scene3d, camera3d);
   updateScaleBar();
+}
+
+// ── Echo-sounder ping floats ──────────────────────────────────────────
+// When playback crosses a depth_ping event, spawn a floating number at
+// the boat's position showing the measured range. It drifts downward
+// and fades out — surfaces under-keel data only at the moment the crew
+// actually reads the gauge, instead of cluttering the label all the time.
+const pingFloats = new Map();    // event idx → { sprite, t0, baseY }
+const PING_FLOAT_LIFE_S = 4;
+const PING_FLOAT_DROP_M = 60;
+function updatePingFloats() {
+  if (!data || !data.events) return;
+  // Spawn new ones: events whose t is now within the float lifetime.
+  for (let i = 0; i < data.events.length; i++) {
+    const ev = data.events[i];
+    if (!ev || ev.type !== "depth_ping") continue;
+    if (currentT < ev.t) continue;
+    if (currentT - ev.t > PING_FLOAT_LIFE_S) continue;
+    if (pingFloats.has(i)) continue;
+    const range = (typeof ev.range === "number") ? ev.range.toFixed(0) + "m" : "ping";
+    const spr = makeTextSprite(range, "#67e8f9", 160, 40);
+    if (!spr) continue;
+    spr.position.set(ev.x, stretchY(0) + 30, ev.z);
+    spr.renderOrder = 65;
+    spr.frustumCulled = false;
+    scene3d.add(spr);
+    pingFloats.set(i, { sprite: spr, t0: ev.t, baseY: spr.position.y });
+  }
+  // Advance + retire.
+  for (const [k, p] of pingFloats) {
+    const age = currentT - p.t0;
+    if (age < 0 || age > PING_FLOAT_LIFE_S) {
+      scene3d.remove(p.sprite);
+      p.sprite.material.map.dispose();
+      p.sprite.material.dispose();
+      pingFloats.delete(k);
+      continue;
+    }
+    const u = age / PING_FLOAT_LIFE_S;
+    p.sprite.position.y = p.baseY - PING_FLOAT_DROP_M * u;
+    p.sprite.material.opacity = 1 - u * u;
+    pinSpriteToCamera(p.sprite, 160, 40);
+  }
 }
 
 // Pick a "nice" round metres value that maps to ~120 px at the current
@@ -5345,8 +5599,10 @@ loadData = function(json) {
     for (const [id, e]    of uboatGlows)    { scene3d.remove(e.halo); e.halo.material.dispose(); }
     for (const [k,  p]    of damagePopups)  { scene3d.remove(p.sprite); p.sprite.material.map.dispose(); p.sprite.material.dispose(); }
     for (const [id, w]    of wakeMeshes)    { scene3d.remove(w); w.material.dispose(); }
+    for (const [id, sl]   of searchLights)  { scene3d.remove(sl); sl.material.dispose(); }
   }
   wakeMeshes.clear();
+  searchLights.clear();
   sceneMeshes.clear();
   eventSprites.clear();
   statusSprites.clear();
@@ -5364,6 +5620,10 @@ loadData = function(json) {
   insigniaSprites.clear();
   uboatGlows.clear();
   damagePopups.clear();
+  for (const [k, p] of pingFloats) {
+    scene3d.remove(p.sprite); p.sprite.material.map.dispose(); p.sprite.material.dispose();
+  }
+  pingFloats.clear();
   _lastSeenHpPct.clear();
   if (view3dActive) {
     buildWaterAndFloor();
@@ -5390,8 +5650,34 @@ const TORP_TYPE_NAMES = {
 };
 const TORP_SPEED_NAMES = { 0: "30 kn", 1: "40 kn", 2: "44 kn" };
 
+// crewIdx → boat call-name resolved from the actual u-boat tracks in
+// this recording. Built in loadData; falls back to the lobby-default
+// list for very old recordings that never carried `n`.
+//
+// Declared via `var` (not `let`) so it's hoisted + initialized to
+// undefined regardless of script execution order. A `let` here meant
+// any runtime error earlier in init left this binding in the TDZ,
+// and the drop handler's loadData → buildCrewIdxName chain then
+// threw "Cannot access '_crewIdxName' before initialization" with no
+// helpful trace. `var` removes that whole class of failure.
+var _crewIdxName = null;
 function crewIdxBoatName(idx) {
+  if (_crewIdxName && _crewIdxName[idx]) return _crewIdxName[idx];
   return ["U-96", "U-552", "U-564", "U-307"][idx] || ("Crew " + idx);
+}
+function buildCrewIdxName() {
+  _crewIdxName = {};
+  for (const id in tracks) {
+    const tr = tracks[id];
+    if (tr.kind !== "u") continue;
+    const m = /^u(\d+)$/.exec(id);
+    if (!m) continue;
+    const i = parseInt(m[1], 10);
+    for (let s = 0; s < tr.samples.length; s++) {
+      const n = tr.samples[s] && tr.samples[s].n;
+      if (n) { _crewIdxName[i] = n; break; }
+    }
+  }
 }
 // In-game-hours per real-hour for the current recording. Mod writes this
 // as `gameTimeRate` for fresh recordings; loadData back-solves it from two
@@ -5810,10 +6096,16 @@ function pickHoverAt(clientX, clientY) {
   scene3d.traverse(obj => {
     if (obj.visible && obj.userData && obj.userData.hover) _hoverCandidates.push(obj);
   });
-  const intersects = _raycaster.intersectObjects(_hoverCandidates, false);
+  // Recursive: torpedoes are THREE.Group with no geometry of their own —
+  // only the body/nose/tail/prop children are hittable. Walking up the
+  // parent chain finds the Group that actually carries userData.hover.
+  const intersects = _raycaster.intersectObjects(_hoverCandidates, true);
   for (const hit of intersects) {
-    const ud = hit.object.userData;
-    if (ud && ud.hover) return ud.hover;
+    let obj = hit.object;
+    while (obj) {
+      if (obj.userData && obj.userData.hover) return obj.userData.hover;
+      obj = obj.parent;
+    }
   }
   return null;
 }
@@ -5871,6 +6163,18 @@ if (_compass) _compass.addEventListener("click", () => {
 // rather than a separate canvas so the scene state (sprites, trails,
 // labels) stays unchanged across toggles.
 let _topDownMode = false;
+// Per-frame camera-target lock to a chosen u-boat. Toggled from the HUD
+// uboat-list "Follow" button. Persists across scrub/forward/reverse —
+// animate3D moves controls3d.target to the followed boat's snapshot
+// every frame the scene is dirtied (playback, scrub, camera move).
+//
+// `var` (not `let`) — animate3D reads this and is defined ~1000 lines
+// earlier in the file. If anything earlier in init throws and stops
+// script execution before reaching the declaration, a `let` here stays
+// in the TDZ and the first rAF fires "Cannot access 'followingId'
+// before initialization" with no recoverable trace. `var` is hoisted
+// + initialized to undefined so the binding always exists.
+var followingId = null;
 const _topDownBtn = $("topDownBtn");
 function applyTopDownMode(on) {
   _topDownMode = on;
@@ -5900,10 +6204,133 @@ function cycleDepthMode() {
 }
 if (_depthModeBtn) _depthModeBtn.addEventListener("click", cycleDepthMode);
 
+// ── Measure tool ──────────────────────────────────────────────────────
+// Click two points on the surface, get the distance in km + nautical
+// miles. Two markers + a line + a midpoint label. Subsequent click
+// starts a fresh measurement.
+let measureActive = false;
+let _measA = null, _measB = null;
+let _measLine = null, _measMarkerA = null, _measMarkerB = null, _measLabel = null;
+const _measBtn = $("measureBtn");
+
+function _measClear() {
+  if (_measLine)    { scene3d.remove(_measLine);    _measLine.geometry.dispose();    _measLine.material.dispose();    _measLine = null; }
+  if (_measMarkerA) { scene3d.remove(_measMarkerA); _measMarkerA.geometry.dispose(); _measMarkerA.material.dispose(); _measMarkerA = null; }
+  if (_measMarkerB) { scene3d.remove(_measMarkerB); _measMarkerB.geometry.dispose(); _measMarkerB.material.dispose(); _measMarkerB = null; }
+  if (_measLabel)   { scene3d.remove(_measLabel);   _measLabel.material.map.dispose(); _measLabel.material.dispose(); _measLabel = null; }
+  _measA = _measB = null;
+  markRender3DDirty();
+}
+function _measMakeMarker(p) {
+  const g = new THREE.SphereGeometry(40, 12, 8);
+  const m = new THREE.MeshBasicMaterial({ color: 0xfde047, depthTest: false });
+  const sph = new THREE.Mesh(g, m);
+  sph.position.set(p.x, stretchY(0) + 2, p.z);
+  sph.renderOrder = 60;
+  scene3d.add(sph);
+  return sph;
+}
+function applyMeasureMode(on) {
+  measureActive = on;
+  if (_measBtn) {
+    _measBtn.textContent = on ? "Measure: ON" : "Measure";
+    _measBtn.style.borderColor = on ? "var(--amber)" : "";
+  }
+  document.body.style.cursor = on ? "crosshair" : "";
+  if (!on) _measClear();
+}
+
+// Ray-vs-water-plane: get the world point at (clientX, clientY).
+function _measPickSurface(clientX, clientY) {
+  if (!renderer3d || !camera3d) return null;
+  const r = renderer3d.domElement.getBoundingClientRect();
+  _mouseNDC.x =  ((clientX - r.left) / r.width)  * 2 - 1;
+  _mouseNDC.y = -((clientY - r.top ) / r.height) * 2 + 1;
+  _raycaster.setFromCamera(_mouseNDC, camera3d);
+  // Water surface plane at y = stretchY(0). Plane is y = stretchY(0) →
+  // normal (0,1,0), constant -stretchY(0).
+  const yPlane = stretchY(0);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -yPlane);
+  const hit = new THREE.Vector3();
+  if (!_raycaster.ray.intersectPlane(plane, hit)) return null;
+  return hit;
+}
+
+function _measCommit() {
+  if (!_measA || !_measB) return;
+  // World distance: ignore Y (we're on the surface plane).
+  const dx = _measB.x - _measA.x;
+  const dz = _measB.z - _measA.z;
+  const m  = Math.hypot(dx, dz);
+  const km = m / 1000;
+  const nm = m / 1852;
+
+  // Line at water surface.
+  const pts = [
+    new THREE.Vector3(_measA.x, stretchY(0) + 1, _measA.z),
+    new THREE.Vector3(_measB.x, stretchY(0) + 1, _measB.z),
+  ];
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color: 0xfde047, depthTest: false });
+  _measLine = new THREE.Line(geo, mat);
+  _measLine.renderOrder = 59;
+  scene3d.add(_measLine);
+
+  _measMarkerB = _measMakeMarker(_measB);
+
+  // Midpoint label "12.3 km / 6.7 nm".
+  const mid = { x: (_measA.x + _measB.x) / 2, z: (_measA.z + _measB.z) / 2 };
+  const txt = km.toFixed(2) + " km / " + nm.toFixed(2) + " nm";
+  const spr = makeTextSprite(txt, "#fde047", 360, 44);
+  if (spr) {
+    spr.position.set(mid.x, stretchY(0) + 60, mid.z);
+    spr.renderOrder = 61;
+    pinSpriteToCamera(spr, 360, 44);
+    scene3d.add(spr);
+    _measLabel = spr;
+  }
+  markRender3DDirty();
+}
+
+// Mouse click vs camera-drag discrimination: only treat as a measure
+// click when the cursor barely moved between mousedown and mouseup.
+let _measDownX = 0, _measDownY = 0, _measDrag = false;
+function _measWireMouse() {
+  if (!renderer3d) return;
+  const dom = renderer3d.domElement;
+  dom.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    _measDownX = e.clientX; _measDownY = e.clientY; _measDrag = false;
+  }, true);
+  dom.addEventListener("mousemove", (e) => {
+    if (_measDrag) return;
+    if (Math.abs(e.clientX - _measDownX) > 4 || Math.abs(e.clientY - _measDownY) > 4) _measDrag = true;
+  }, true);
+  dom.addEventListener("mouseup", (e) => {
+    if (e.button !== 0 || _measDrag || !measureActive) return;
+    const p = _measPickSurface(e.clientX, e.clientY);
+    if (!p) return;
+    if (!_measA || (_measA && _measB)) {
+      // Start (or restart) a new measurement.
+      _measClear();
+      _measA = p;
+      _measMarkerA = _measMakeMarker(_measA);
+      markRender3DDirty();
+    } else {
+      _measB = p;
+      _measCommit();
+    }
+  }, true);
+}
+_measWireMouse();
+if (_measBtn) _measBtn.addEventListener("click", () => applyMeasureMode(!measureActive));
+
 window.addEventListener("keydown", (e) => {
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT")) return;
   if (e.code === "KeyT") { e.preventDefault(); applyTopDownMode(!_topDownMode); }
   if (e.code === "KeyG") { e.preventDefault(); cycleDepthMode(); }
+  if (e.code === "KeyM") { e.preventDefault(); applyMeasureMode(!measureActive); }
+  if (e.code === "Escape" && measureActive) { e.preventDefault(); applyMeasureMode(false); }
 });
 
 // Clickable U-boat list. Rebuilt on every fresh load so it reflects the
@@ -5947,12 +6374,22 @@ function rebuildUboatList() {
     const chkHtml = ownerInt >= 0
       ? `<input type="checkbox" class="uboatChartChk uboatChartChkHud" data-owner="${ownerInt}"${checked} title="Show this boat's nav-chart drawings">`
       : "";
+    // "Follow" button: toggles the camera-lock state for this boat.
+    // Visual: stays highlighted while active so the user can see which
+    // boat the camera is currently locked to.
+    const followActive = (followingId === id) ? " active" : "";
+    const followLabel  = (followingId === id) ? "Following" : "Follow";
     btn.innerHTML =
-      `<div class="nameRow">${chkHtml}${imgHtml}<span style="color:${col.fill || "#fff"}">${nm}</span></div>` +
+      `<div class="nameRow">${chkHtml}${imgHtml}<span style="color:${col.fill || "#fff"}">${nm}</span>` +
+      `<button class="followBtn${followActive}" data-boat-id="${id}" title="Lock the camera to this boat (M-key independent)">${followLabel}</button>` +
+      `</div>` +
       `<div class="stats">--</div>`;
     btn.addEventListener("click", (ev) => {
-      // Don't fire camera-focus when the click was on the checkbox.
-      if (ev.target && ev.target.classList && ev.target.classList.contains("uboatChartChk")) return;
+      // Don't fire camera-focus when the click was on the checkbox
+      // or the Follow button — those have their own handlers.
+      if (ev.target && ev.target.classList && (
+          ev.target.classList.contains("uboatChartChk") ||
+          ev.target.classList.contains("followBtn"))) return;
       if (!controls3d) return;
       const snap = entitySnapshot(id, currentT);
       if (!snap) return;
@@ -5963,6 +6400,18 @@ function rebuildUboatList() {
         target:     new THREE.Vector3(snap.x, 0, snap.z),
       });
     });
+    // Wire the Follow button — single source of truth is followingId,
+    // refresh every button's label so toggling one boat de-highlights
+    // any previously-followed boat.
+    const followBtn = btn.querySelector(".followBtn");
+    if (followBtn) {
+      followBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        followingId = (followingId === id) ? null : id;
+        refreshFollowButtons();
+        markRender3DDirty();
+      });
+    }
     // Wire the per-boat checkbox once the button is in the DOM.
     const chk = btn.querySelector(".uboatChartChkHud");
     if (chk) {
@@ -5989,6 +6438,18 @@ function rebuildUboatList() {
 // "300+ m" cap on depth and a red flag on UK < 15 m. Boats not yet
 // spawned or already dead get a blank "--" row so the list still acts
 // as a single click target to focus the camera on them.
+// Sync every Follow button's label + active state to the global
+// followingId. Called after a toggle so all rows agree.
+function refreshFollowButtons() {
+  const btns = document.querySelectorAll("#uboatList .followBtn");
+  for (const b of btns) {
+    const id = b.dataset.boatId;
+    const on = (followingId === id);
+    b.textContent = on ? "Following" : "Follow";
+    b.classList.toggle("active", on);
+  }
+}
+
 function updateUboatList() {
   const host = $("uboatList");
   if (!host) return;
