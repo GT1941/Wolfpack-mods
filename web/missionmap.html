@@ -131,11 +131,34 @@
     overflow: auto;
     min-height: 0;
   }
-  /* U-boat-row chart-toggle checkbox in the Legend. Small + dim, sits
-     left of the insignia so it doesn't fight the boat name's colour. */
-  #legendBody .row .uboatChartChk {
-    margin: 0 4px 0 0;
+  /* Legend rows used to host a chart-visibility checkbox; that toggle
+     now lives on the per-u-boat row in the right sidebar. Keeping the
+     selector here as a no-op for any stray checkbox elements that
+     might remain in older user state. */
+  #legendBody .row .uboatChartChk { display: none; }
+
+  /* Per-u-boat toggle buttons (View / Nav / Trail) in the right
+     uboatList. Same visual language as the Follow button — neutral
+     dim until active, amber-on-fg when active. */
+  #uboatList .uTogglesRow {
+    display: flex; gap: 4px; padding: 2px 0 1px 30px;
+  }
+  #uboatList .uToggle {
+    background: rgba(19,26,31,0.85);
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 2px 6px;
     cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  #uboatList .uToggle:hover { border-color: var(--amber); color: var(--fg); }
+  #uboatList .uToggle.active {
+    background: var(--amber);
+    color: #1a1a1a;
+    border-color: var(--amber);
   }
   /* Legend is the visually densest panel; cap its height so it doesn't push
      the other two panels off-screen on short windows. */
@@ -177,7 +200,14 @@
     cursor: pointer; font-size: 12px;
   }
   #trailsBody label.toggle input { cursor: pointer; }
-  #uboatStatsBody { display: flex; flex-direction: column; gap: 8px; max-height: 36vh; }
+  /* User-resizable hit table: default 36vh, drag the bottom-right corner
+     to expand it downward up to 80vh when a captain wants more rows
+     visible at once. */
+  #uboatStatsBody {
+    display: flex; flex-direction: column; gap: 8px;
+    height: 36vh; max-height: 80vh; min-height: 80px;
+    resize: vertical; overflow: auto;
+  }
   .uboatStatRow { display: flex; flex-direction: column; gap: 2px; }
   .uboatStatHead {
     font-weight: 600; font-size: 12px;
@@ -193,8 +223,18 @@
     padding-left: 10px;
     display: flex; gap: 8px; justify-content: space-between;
   }
-  .uboatHitRow .delta { color: var(--amber); }
-  .uboatHitRow .deltaNone { color: var(--dim); opacity: 0.6; }
+  /* TOI-Δ colour tiers, banded by absolute distance from the closest TOI.
+     Narrower bands at the top so the perfect-timing read is unambiguous:
+       ≤  1 s  → purple  (frame-perfect)
+       ≤ 10 s  → green   (well within the window)
+       ≤ 60 s  → yellow  (in the rough)
+       > 60 s  → red     (out of band) */
+  .uboatHitRow .delta            { color: var(--amber); }
+  .uboatHitRow .delta.toiPurple  { color: #c084fc; }
+  .uboatHitRow .delta.toiGreen   { color: #4ade80; }
+  .uboatHitRow .delta.toiYellow  { color: #facc15; }
+  .uboatHitRow .delta.toiRed     { color: #ff5555; }
+  .uboatHitRow .deltaNone        { color: var(--dim); opacity: 0.6; }
   #drop {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -327,14 +367,16 @@
     mix-blend-mode: lighten;
   }
   #uboatList button .stats {
-    color: var(--dim);
-    font-size: 10px;
+    color: var(--fg);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
     padding-left: 30px;     /* sit under the name, not the insignia */
-    line-height: 1.35;
+    line-height: 1.45;
   }
   #uboatList button .stats .uk.warn { color: #ff5555; }
+  /* Sub-tier labels (HDG, UK) stay dim so the values pop. */
+  #uboatList button .stats .lbl { color: var(--dim); font-weight: normal; }
 
   /* Bottom-left scale bar overlay — pixel width recalculated each frame
      so it always reads a "nice" round metres value at the current zoom. */
@@ -407,8 +449,9 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-20i</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-21p</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
+    <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
     <span class="meta">Game time: <span id="gameTime">--:--</span> <span id="gameDate"></span></span>
     <span class="meta" title="Mean speed &amp; heading of merchants still afloat at full HP. Reads 'Alerted' when any escort has detected something.">Convoy avg: <span id="convoyAvg">--</span> · <span id="convoyHead">--</span></span>
@@ -429,10 +472,10 @@
           <span class="chev">▾</span> Legend
         </button>
         <div class="panelBody" id="legendBody">
-          <div class="row" style="color:#4ade80"><input type="checkbox" class="uboatChartChk" data-owner="0" title="Show U-96's nav-chart drawings"><img class="insignia" src="insignia/u96.png"  alt=""  onerror="this.style.display='none'">U-96</div>
-          <div class="row" style="color:#facc15"><input type="checkbox" class="uboatChartChk" data-owner="1" title="Show U-552's nav-chart drawings"><img class="insignia" src="insignia/u552.png" alt=""  onerror="this.style.display='none'">U-552</div>
-          <div class="row" style="color:#fb923c"><input type="checkbox" class="uboatChartChk" data-owner="2" title="Show U-564's nav-chart drawings"><img class="insignia" src="insignia/u564.png" alt=""  onerror="this.style.display='none'">U-564</div>
-          <div class="row" style="color:#22d3ee"><input type="checkbox" class="uboatChartChk" data-owner="3" title="Show U-307's nav-chart drawings"><img class="insignia" src="insignia/u307.png" alt=""  onerror="this.style.display='none'">U-307</div>
+          <div class="row" style="color:#4ade80"><img class="insignia" src="insignia/u96.png"  alt=""  onerror="this.style.display='none'">U-96</div>
+          <div class="row" style="color:#facc15"><img class="insignia" src="insignia/u552.png" alt=""  onerror="this.style.display='none'">U-552</div>
+          <div class="row" style="color:#fb923c"><img class="insignia" src="insignia/u564.png" alt=""  onerror="this.style.display='none'">U-564</div>
+          <div class="row" style="color:#22d3ee"><img class="insignia" src="insignia/u307.png" alt=""  onerror="this.style.display='none'">U-307</div>
           <div class="row"><div class="swatch" style="background:var(--yellow)"></div>Torpedo</div>
           <div class="row"><div class="swatch" style="background:#c084fc"></div>Merchant</div>
           <div class="row"><div class="swatch" style="background:#ef4444"></div>Escort</div>
@@ -508,19 +551,39 @@
             <span class="chev">▾</span> Trails
           </button>
           <div class="panelBody" id="trailsBody">
-            <label class="toggle"><input type="checkbox" id="trailUboatFull"> U-boat full (vs 10 km tail)</label>
-            <label class="toggle"><input type="checkbox" id="trailConvoyOn" checked> Convoy (merchants)</label>
-            <label class="toggle"><input type="checkbox" id="trailEscortOn" checked> Escorts</label>
+            <label class="toggle"><input type="checkbox" id="trailConvoyOn"> Convoy (merchants)</label>
+            <label class="toggle"><input type="checkbox" id="trailEscortOn"> Escorts</label>
+            <div style="color:var(--dim); font-size:11px; padding-top:4px; line-height:1.4;">
+              U-boat trails toggle per-boat from the right-side U-boat list.
+            </div>
+          </div>
+        </div>
+        <div class="panel" id="displayPanel">
+          <button class="panelHeader" data-target="displayBody" type="button">
+            <span class="chev">▾</span> Display
+          </button>
+          <div class="panelBody" id="displayBody">
+            <label class="toggle" title="Multiply all vertical positions (depth, draught) by 5× so dives and torpedo running depth are readable at top-down camera angles. Turn off for true-scale ship proportions (surface ships no longer look chunky; loses the visual torpedo-vs-keel alignment cue).">
+              <input type="checkbox" id="depthStretchToggle" checked> Stretch depth ×5
+            </label>
+            <label class="toggle" title="Multiply visible u-boat pitch/roll by 3× so a 5° dive bubble looks like 15°. Numeric tilt readouts in the right menu still show the real value. Off by default — turn on if the real pitch is too subtle to see at your usual zoom.">
+              <input type="checkbox" id="tiltAmplifyToggle"> Amplify tilt ×3
+            </label>
           </div>
         </div>
       </div>
-      <div id="bottomRightClock">
-        <div class="brGt"  title="Game time at the current playback position (accounts for the game-time rate)">
-          <span class="brLbl">Game</span> <span id="brGameTime">--:--:--</span>
-        </div>
-        <div class="brRec" title="Real-world wall-clock at the current playback position (recording start + elapsed playback seconds)">
-          <span class="brLbl">Recorded</span> <span id="brRecorded">--</span>
-        </div>
+    </div>
+    <!-- Game-time + Recorded-time clock pinned to the bottom-right of the
+         stage, immediately above the playback timer / scrubber footer.
+         Moved out of #hud3d (which is a top-right flex column) so the
+         clock sits where its CSS bottom/right offset says it should,
+         rather than stacking under the Trails panel inside the HUD. -->
+    <div id="bottomRightClock">
+      <div class="brGt"  title="Game time at the current playback position (accounts for the game-time rate)">
+        <span class="brLbl">Game</span> <span id="brGameTime">--:--:--</span>
+      </div>
+      <div class="brRec" title="Real-world wall-clock at the current playback position (recording start + elapsed playback seconds)">
+        <span class="brLbl">Recorded</span> <span id="brRecorded">--</span>
       </div>
     </div>
   </div>
@@ -568,36 +631,57 @@ const UBOAT_BY_NAME = {
 };
 const UBOAT_BY_INDEX = ["U-96", "U-552", "U-564", "U-307"];
 
-// Per-U-boat nav-chart visibility (the crew's in-game chart annotations
-// — chart_add / chart_update events). Index = ownerInt 0..3 matching
-// UBOAT_BY_INDEX. All start hidden; the Legend's per-boat checkboxes
-// flip these on individually. Drawings whose owner is outside [0,3]
-// (system-emitted, no owner) follow the noOwnerVisible flag below.
-// Named `uboatChartVisible` (not just `chartVisible`) because the
-// pre-existing `let chartVisible` further down toggles the dropped-
-// PNG chart-overlay image — clobbering it broke the entire script
-// with a "duplicate declaration" SyntaxError, which is why drop
-// stopped working.
-const uboatChartVisible = [false, false, false, false];
+// Per-U-boat nav-chart visibility mode. Index = ownerInt 0..3 matching
+// UBOAT_BY_INDEX. Three states per boat:
+//   "off"  – drawings hidden
+//   "live" – drawings appear as playback advances past their chart_add
+//            timestamp (animates the chart build-up over time)
+//   "full" – all drawings shown immediately (legacy "on" behaviour)
+// Persisted to localStorage via UBOAT_CHART_STORE — migration from the
+// older boolean format happens in _loadPerBoatBools.
+const uboatChartVisible = ["off", "off", "off", "off"];
 let   uboatChartNoOwnerVisible = false;   // owner=-1 drawings, reserved for future
+// Modes that the per-boat toggle button cycles through.
+const CHART_MODES = ["off", "live", "full"];
 
-function chartOwnerVisible(owner) {
-  if (typeof owner !== "number") return uboatChartNoOwnerVisible;
-  if (owner >= 0 && owner < 4)   return uboatChartVisible[owner];
-  return uboatChartNoOwnerVisible;
+// Resolve whether a chart object owned by `owner` should be visible at
+// the current playback time, given its chart_add timestamp. Pulls the
+// mode from uboatChartVisible[owner] and applies the mode rule.
+function chartOwnerVisible(owner, firstSeenT) {
+  let mode;
+  if (typeof owner !== "number") {
+    return uboatChartNoOwnerVisible;
+  } else if (owner >= 0 && owner < 4) {
+    mode = uboatChartVisible[owner];
+  } else {
+    return uboatChartNoOwnerVisible;
+  }
+  if (mode === "off")  return false;
+  if (mode === "full") return true;
+  // "live"
+  if (typeof firstSeenT !== "number") return true;
+  return currentT >= firstSeenT;
 }
 
-// Apply current per-uboat visibility to every chart object already in
-// the scene. Cheap walk — chart objects are few. Called by the Legend
-// checkbox handlers below and by buildChartDrawings on rebuild.
+// Apply current per-uboat visibility + live-mode timing to every chart
+// object in the scene. Cheap walk — chart objects are typically dozens
+// at most. Called from buildChartDrawings on rebuild AND from the
+// render loop whenever any boat is in "live" mode (currentT changes
+// per frame so live drawings reveal progressively).
 function applyChartVisibility() {
   if (!scene3d) return;
   for (const obj of scene3d.children) {
     if (obj.userData && obj.userData.kind === "chart") {
-      obj.visible = chartOwnerVisible(obj.userData.chartOwner);
+      obj.visible = chartOwnerVisible(obj.userData.chartOwner, obj.userData.chartT);
     }
   }
   if (typeof markRender3DDirty === "function") markRender3DDirty();
+}
+// True when at least one boat's chart mode requires per-frame
+// re-evaluation (i.e. "live" — the visibility is time-gated).
+function anyChartLive() {
+  for (let i = 0; i < 4; i++) if (uboatChartVisible[i] === "live") return true;
+  return false;
 }
 function uboatColors(name, id) {
   if (name && UBOAT_BY_NAME[name]) return UBOAT_BY_NAME[name];
@@ -720,13 +804,29 @@ function loadData(json) {
   data = json;
   $("nSamples").textContent = data.samples.length;
   $("nEvents").textContent = data.events.length;
+  // Recorder version stamp (added in MissionMap 1.9.6). Earlier recordings
+  // don't carry the field — show an explicit "pre-1.9.6" tag rather than
+  // a bare "?" so the user knows the JSON predates the version stamping
+  // rather than that the viewer failed to read it.
+  const recVer = data.missionMapVersion;
+  $("recVersion").textContent = recVer ? "v" + recVer : "pre-1.9.6";
 
-  // Index boid_meta events so meshForEntity() can pull real length/beam.
+  // Index boid_meta events so meshForEntity() can pull real
+  // length / beam / draught / height. MissionMap 1.9.9+ stamps
+  // draught + height from MerchantShipStats / WarshipStats so the
+  // viewer can render the underwater portion of the hull at scale —
+  // matters for "did the torpedo pass under or hit the side" reads,
+  // since torpedo depth is captured per launch event.
   boidMetaById.clear();
   for (const ev of data.events) {
     if (ev && ev.type === "boid_meta" && ev.id &&
         typeof ev.length === "number" && typeof ev.beam === "number") {
-      boidMetaById.set(ev.id, { length: ev.length, beam: ev.beam });
+      boidMetaById.set(ev.id, {
+        length: ev.length,
+        beam:   ev.beam,
+        draught: typeof ev.draught === "number" ? ev.draught : 0,
+        height:  typeof ev.height  === "number" ? ev.height  : 0,
+      });
     }
   }
 
@@ -1911,7 +2011,23 @@ function stepBy(delta) {
 // Keyboard: space toggles play/pause, ← / → step the scrubber.
 const KEY_STEP_S = 5;
 window.addEventListener("keydown", (e) => {
-  // Don't intercept while focused in a text input (none right now, but defensive).
+  // Space ALWAYS toggles playback, even when the focus is on a TOI input
+  // or the Add-TOI button. The TOI list inputs accept "HH:MM:SS" — never
+  // a literal space — so swallowing the space key here can't break the
+  // legitimate input flow, and playback control is the most important
+  // global shortcut.
+  if (e.code === "Space") {
+    e.preventDefault();
+    togglePlay();
+    // If a button kept focus from a recent click, drop it so the next
+    // space press doesn't double-fire the button's default activation.
+    if (e.target && typeof e.target.blur === "function" &&
+        e.target.tagName === "BUTTON") {
+      e.target.blur();
+    }
+    return;
+  }
+  // Other shortcuts: don't intercept while focused in a text input.
   const tag = (e.target && e.target.tagName) || "";
   if (tag === "INPUT" || tag === "TEXTAREA") return;
 
@@ -1936,10 +2052,7 @@ window.addEventListener("keydown", (e) => {
     if (e.code === "KeyF") { e.preventDefault(); if (data) frame3DFromBounds(); return; }
   }
 
-  if (e.code === "Space") {
-    e.preventDefault();
-    togglePlay();
-  } else if (e.code === "ArrowLeft") {
+  if (e.code === "ArrowLeft") {
     e.preventDefault();
     if (playing) togglePlay();
     stepBy(-KEY_STEP_S);
@@ -2098,7 +2211,14 @@ const Y_FLOOR  = -300;    // past Type VII crush depth so detonations and
 // Depth in the 3D view is exaggerated by this multiplier so subtle depth
 // changes become visually obvious. Set to 1 to render true-scale. The
 // horizontal axes are untouched.
-const DEPTH_STRETCH = 5;
+// Depth stretch (vertical exaggeration). Default 5× because vertical
+// extent is otherwise hard to read at top-down map angles; 1× restores
+// real proportions for surface-ship inspection (ships are no longer
+// chunky underwater, but torpedo-depth alignment loses its visual
+// indicator). User-toggled via the Display panel; setDepthStretchOn()
+// updates the value and clears cached meshes that bake the multiplier
+// into their geometry so the next render rebuilds with the new value.
+let DEPTH_STRETCH = 5;
 function stretchY(y) { return y * DEPTH_STRETCH; }
 
 // Orbit camera around a ground-locked target. Supports:
@@ -3151,10 +3271,25 @@ function buildChartDrawings() {
   }
 
   const state = new Map();
+  // Track the "first seen" timestamp per chart id — the time the
+  // chart_add event fired. Lets Live-mode rendering reveal each
+  // drawing at the moment in playback it was actually created,
+  // independent of any subsequent chart_update events (which would
+  // make the drawing "appear earlier" if we used the latest event's
+  // timestamp instead).
+  const firstSeenT = new Map();
   for (const ev of data.events) {
     if (!ev || !ev.id) continue;
-    if (ev.type === "chart_add" || ev.type === "chart_update") state.set(ev.id, ev);
-    else if (ev.type === "chart_remove") state.delete(ev.id);
+    if (ev.type === "chart_add" || ev.type === "chart_update") {
+      state.set(ev.id, ev);
+      if (ev.type === "chart_add" && !firstSeenT.has(ev.id) && typeof ev.t === "number") {
+        firstSeenT.set(ev.id, ev.t);
+      }
+    }
+    else if (ev.type === "chart_remove") {
+      state.delete(ev.id);
+      firstSeenT.delete(ev.id);
+    }
   }
   if (state.size === 0) return;
 
@@ -3190,14 +3325,17 @@ function buildChartDrawings() {
     const baseColHex = new THREE.Color(baseCol);
     const kind = d.k || "point";
 
-    // Helper: tag every chart object with its kind + owner, set its
-    // initial visibility against the per-U-boat toggle state, and add
-    // it to the scene. Centralises the "make this object owner-
-    // controlled" wiring so each branch below only has to call this.
+    // Helper: tag every chart object with its kind + owner + first-seen
+    // timestamp, set its initial visibility against the per-U-boat
+    // toggle state + currentT, and add it to the scene. Centralises
+    // the "make this object owner-controlled" wiring so each branch
+    // below only has to call this.
+    const chartT = firstSeenT.get(d.id);
     const addChartObj = (obj) => {
       obj.userData.kind = "chart";
       obj.userData.chartOwner = owner;
-      obj.visible = chartOwnerVisible(owner);
+      obj.userData.chartT = chartT;
+      obj.visible = chartOwnerVisible(owner, chartT);
       scene3d.add(obj);
     };
 
@@ -3815,6 +3953,46 @@ function pinSpriteToCamera(spr, authoredW, authoredH) {
   spr.scale.set(authoredW * k, authoredH * k, 1);
 }
 
+// Clamp a sprite's world-space width to a maximum, preserving aspect
+// ratio. Use AFTER pinSpriteToCamera so the camera-distance scale is
+// already applied.
+//
+// Originally clamped to the entity's hull length (96 m for u-boats,
+// boidMeta.length for ships) so labels couldn't overrun the hull. That
+// turned out too aggressive — the height shrinks proportionally with
+// width, so a 96 m u-boat label collapsed to 96×7 world units, which
+// is unreadable at any practical zoom (~17 px wide × 1 px tall at
+// typical camera distance). Now the limit is the same hull length but
+// with a 2× allowance, AND a minimum world-space height floor so the
+// label stays legible even when the hull is short. Slightly wider than
+// the ship but always readable beats "perfectly contained but
+// indecipherable".
+const LABEL_MIN_HEIGHT_W = 14;        // world units; tuned so 16-px text
+                                      // canvas projects to ~10 px at typical
+                                      // camera distance.
+function clampSpriteWidthToEntity(spr, hullLen) {
+  if (!spr || hullLen <= 0) return;
+  const maxW = hullLen * 2;           // soft cap, 2× hull length
+  if (spr.scale.x > maxW) {
+    const aspect = spr.scale.y / spr.scale.x;
+    spr.scale.x = maxW;
+    spr.scale.y = maxW * aspect;
+  }
+  // Height floor: if the cap (or anything else) shrank the label to a
+  // thin sliver, scale back up proportionally. The label may overrun
+  // hull length slightly but stays readable, which is the priority.
+  if (spr.scale.y < LABEL_MIN_HEIGHT_W) {
+    const ratio = LABEL_MIN_HEIGHT_W / spr.scale.y;
+    spr.scale.y = LABEL_MIN_HEIGHT_W;
+    spr.scale.x *= ratio;
+  }
+}
+
+// Effective hull length of a u-boat mesh in world units — matches the
+// LatheGeometry profile in meshForEntity (kind === "u"). Updated here
+// whenever that geometry changes so the label cap tracks the actual hull.
+const UBOAT_HULL_LEN = 96;
+
 // Render a single line of text into a CanvasTexture sprite. Used for the
 // "<ship> sank here" overlays — kept lightweight (one canvas per event)
 // since these are static and only created at most once per sinking.
@@ -3878,16 +4056,34 @@ function depthGradientColor(d, surfaceColor) {
   return _DEPTH_RED;
 }
 
+// Depth pole starts this many metres below the surface, not at y=0.
+// The top stub of pole was visually noisy at periscope-depth boats and
+// the very-shallow gradient at the top conveyed no information; capping
+// the top end at -5 m gives the pole a cleaner "you're well below the
+// waves" read.
+const DEPTH_POLE_TOP_M = 5;
+
+// Torpedoes run shallow (often 3–7 m set depth) and the user wants the
+// running depth visible even when the eel is barely below the surface,
+// so they get a smaller top cap than u-boats / depth charges.
+const TORPEDO_POLE_TOP_M = 1;
+
 function updateDepthPole(id, kind, snap, meshPosition) {
-  // Don't draw a pole when the thing is at/above the surface — that's
-  // just a tiny line on top of the hull and adds visual noise.
-  if (meshPosition.y >= -1) {
+  // Per-kind top cap. Torpedoes get a small 1 m offset so a 3 m runner
+  // still shows a visible 2 m pole stub; u-boats / depth charges keep
+  // the 5 m cap that cleaned up periscope-depth noise.
+  const poleTopM = (kind === "t") ? TORPEDO_POLE_TOP_M : DEPTH_POLE_TOP_M;
+  // Don't draw a pole when the entity is shallower than the pole's top
+  // cap — there's nothing meaningful between the surface and the boat.
+  const poleTopY = stretchY(-poleTopM);
+  if (meshPosition.y >= poleTopY) {
     const existing = depthPoles.get(id);
     if (existing) existing.visible = false;
     return;
   }
   // Real-world depth at the entity end (positive metres). For u-boats this
-  // is snap.d directly; depth charges only carry world Y so we negate.
+  // is snap.d directly; depth charges and torpedoes only carry world Y
+  // so we negate. Raw y is in metres (viewer applies stretchY for render).
   let depthM = 0;
   if (snap) {
     if (snap.d != null)      depthM = snap.d;
@@ -3918,13 +4114,18 @@ function updateDepthPole(id, kind, snap, meshPosition) {
     pole.userData.segs = segs;
   }
 
-  // Resolve the surface-end tint (boat colour for u-boats, DC orange
-  // otherwise). Recomputed each frame because the entity's identity can
-  // resolve late (snap.n only populated once we have a name).
+  // Resolve the surface-end tint per kind:
+  //   u-boat   → owning boat's colour
+  //   torpedo  → torpedo yellow (matches the torpedo mesh)
+  //   depth chg → orange
+  // Recomputed each frame because the entity's identity can resolve late
+  // (snap.n only populated once we have a name).
   let surfaceColor;
   if (kind === "u") {
     const c = uboatColors(snap && snap.n, id);
     surfaceColor = new THREE.Color(c.stroke || c.fill || "#9ad7ff");
+  } else if (kind === "t") {
+    surfaceColor = new THREE.Color(0xfacc15);
   } else {
     surfaceColor = new THREE.Color(0xff9933);
   }
@@ -3932,13 +4133,16 @@ function updateDepthPole(id, kind, snap, meshPosition) {
   const segs    = pole.userData.segs;
   const posArr  = pole.geometry.attributes.position.array;
   const colArr  = pole.geometry.attributes.color.array;
+  // Pole runs from poleTopY (kind-dependent cap) at t=0 down to the
+  // entity at t=1, with the per-vertex depth d advancing from poleTopM
+  // to the entity's full depth.
   for (let i = 0; i <= segs; i++) {
     const t = i / segs;
-    const y = meshPosition.y * t;        // 0 at surface, meshPosition.y at entity
+    const y = poleTopY + (meshPosition.y - poleTopY) * t;
     posArr[i * 3 + 0] = meshPosition.x;
     posArr[i * 3 + 1] = y;
     posArr[i * 3 + 2] = meshPosition.z;
-    const d = depthM * t;                // real-depth at this vertex
+    const d = poleTopM + (depthM - poleTopM) * t;
     const c = ukDanger ? _DEPTH_RED : depthGradientColor(d, surfaceColor);
     colArr[i * 3 + 0] = c.r;
     colArr[i * 3 + 1] = c.g;
@@ -4229,9 +4433,19 @@ function updateUboatLabel3D(id, snap, meshPosition) {
   // water plane past ~40 m and disappear behind it — depthTest:false fights
   // occlusion but the sprite still draws into the dark water volume and
   // gets visually swallowed. Pin them above the surface instead.
-  const labelY = Y_TOP + 60 + crewIdx * 70;
+  // Sit the label just above the water surface, with a small per-boat
+  // stagger so multiple boats close together don't perfectly overlap.
+  // Earlier offset (Y_TOP + 60 + crewIdx*70 = 61..271 world units up)
+  // looked OK at far zoom but was way above the hull at close zoom —
+  // labels appeared completely disconnected from their boats. New
+  // 8 + crewIdx*5 puts them roughly at the conning-tower height while
+  // still stacking when boats are stacked vertically on the map.
+  const labelY = Y_TOP + 8 + crewIdx * 5;
   entry.sprite.position.set(meshPosition.x, labelY, meshPosition.z);
   pinSpriteToCamera(entry.sprite, 320, 40);
+  // Cap the label width to the hull length so the readout never visually
+  // overruns the u-boat at any zoom level.
+  clampSpriteWidthToEntity(entry.sprite, UBOAT_HULL_LEN);
 }
 
 // Convoy ship label: ship-type name + speed with trend arrow. Shown
@@ -4360,20 +4574,60 @@ function updateBoidLabel3D(id, kind, snap, meshPosition) {
   entry.sprite.position.set(meshPosition.x, Y_TOP + 50, meshPosition.z);
   entry.sprite.visible = true;
   pinSpriteToCamera(entry.sprite, 280, 35);
+  // Cap label width to the hull length. boidMeta carries the real length
+  // when the recorder captured BoxCollider dimensions; fall back to
+  // kind-typical defaults that match the mesh fallbacks in meshForEntity.
+  const meta = boidMetaById ? boidMetaById.get(id) : null;
+  const shipLen = (meta && meta.length > 1)
+    ? meta.length
+    : (kind === "m" ? 120 : 90);
+  clampSpriteWidthToEntity(entry.sprite, shipLen);
 }
 
-// Alerted / burning state icons floating above each ship. We keep two
-// emoji sprites per ship and toggle visibility based on the snap flags.
-function updateBoidStateIcons3D(id, snap, meshPosition) {
+// Convoy-fleeing state lookup. AI_Convoy.startFleeing / stopFleeing emit
+// `convoy_fleeing` events with `state: "start"|"stop"` (MissionMap 1.9.11+).
+// Cached on currentT so repeated calls within the same frame are free;
+// invalidated whenever currentT changes.
+let _convoyFleeingCacheT = -1;
+let _convoyFleeingCacheV = false;
+function convoyFleeingAt(t) {
+  if (t === _convoyFleeingCacheT) return _convoyFleeingCacheV;
+  let state = false;
+  if (data && Array.isArray(data.events)) {
+    // Walk forward, last matching event wins. Events array is in
+    // emission order so the "most recent state ≤ t" comes out
+    // correctly by iterating to the end and keeping the last match.
+    for (const ev of data.events) {
+      if (ev && ev.type === "convoy_fleeing" && ev.t != null && ev.t <= t) {
+        state = ev.state === "start";
+      }
+    }
+  }
+  _convoyFleeingCacheT = t;
+  _convoyFleeingCacheV = state;
+  return state;
+}
+
+// Alerted / burning / fleeing state icons floating above each ship.
+// Alerted (❗) is per-escort — comes from snap.al; burning (🔥) is
+// per-boid — comes from snap.f. Fleeing (💡) is convoy-wide and shown
+// on every MERCHANT when AI_Convoy is in startFleeing state — gives
+// the "convoy with running lights on, trying to flee" read distinct
+// from per-escort alert.
+function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
   let entry = boidIcons.get(id);
   if (!entry) {
     // Build lazily; only spend canvas allocs on ships that ever actually
     // change state during the recording.
-    entry = { alert: null, fire: null };
+    entry = { alert: null, fire: null, flee: null };
     boidIcons.set(id, entry);
   }
   const alerted = !!(snap && snap.al);
   const burning = !!(snap && snap.f);
+  // Convoy-wide fleeing flag — only render on merchants (escorts
+  // already carry per-ship alert), so the two indicators stay
+  // semantically distinct.
+  const fleeing = (kind === "m") && convoyFleeingAt(currentT);
 
   if (alerted) {
     if (!entry.alert) {
@@ -4399,6 +4653,21 @@ function updateBoidStateIcons3D(id, snap, meshPosition) {
     pinSpriteToCamera(entry.fire, 60, 60);
   } else if (entry.fire) {
     entry.fire.visible = false;
+  }
+
+  if (fleeing) {
+    if (!entry.flee) {
+      entry.flee = makeIconSprite(emojiTexture("💡", "#fde047"), 60);
+      scene3d.add(entry.flee);
+    }
+    // Stack to the right of any already-rendered icons so all three
+    // remain readable side-by-side at high zoom.
+    const dx = (alerted ? 40 : 0) + (burning ? 40 : 0);
+    entry.flee.position.set(meshPosition.x + dx, Y_TOP + 105, meshPosition.z);
+    entry.flee.visible = true;
+    pinSpriteToCamera(entry.flee, 60, 60);
+  } else if (entry.flee) {
+    entry.flee.visible = false;
   }
 }
 
@@ -4582,6 +4851,224 @@ function disposeSearchLight(id) {
   if (sl) { scene3d.remove(sl); sl.material.dispose(); searchLights.delete(id); }
 }
 
+// Identify the ship class from its (already-prettified) name. Returns a
+// short tag we use to pick a top-down silhouette: "tanker", "freighter",
+// "trawler", "passenger" for merchants; "tribal", "flower", "bittern"
+// for escorts. Returns null for unrecognised names so the caller can
+// fall back to the generic merchant/escort silhouettes.
+//
+// Matches the most common classes in the recognition manual; case-
+// insensitive substring search so e.g. "Heavy Tanker 27", "Tribal class
+// destroyer", and "Flower-class corvette" all hit.
+function shipClassFromName(name, kind) {
+  if (!name) return null;
+  const s = String(name).toLowerCase();
+  if (kind === "e") {
+    if (s.includes("tribal"))  return "tribal";
+    if (s.includes("flower"))  return "flower";
+    if (s.includes("bittern")) return "bittern";
+    return null;
+  }
+  // Merchant side. Tanker / Trawler / Passenger are distinct types in
+  // MerchantShipStats.ShipType; "freighter" is the catch-all heavy /
+  // light cargo merchant (and the recorder's default name for unnamed
+  // merchant prefabs like "heavy_freighter_27").
+  if (s.includes("tanker"))    return "tanker";
+  if (s.includes("trawler"))   return "trawler";
+  if (s.includes("passenger") || s.includes("liner")) return "passenger";
+  if (s.includes("freighter") || s.includes("merchant") || s.includes("cargo")) return "freighter";
+  return null;
+}
+
+// Per-class draught fallback (metres) used when the recording's boid_meta
+// doesn't carry meta.draught — i.e. pre-1.9.9 JSONs, or any record where
+// the recorder couldn't reach the stats component. The earlier single
+// "beam * 0.25" heuristic was too shallow for big hulls (passenger
+// liners at 22 m beam came out at 5.5 m, real ~9 m); per-class values
+// from historical references are much closer to right and visibly fix
+// the "torpedo passed under" optical illusion for legacy captures.
+function fallbackDraughtForClass(cls, kind, beam) {
+  switch (cls) {
+    case "tanker":    return Math.max(7,   beam * 0.40); // T2 ~9 m laden
+    case "freighter": return Math.max(6,   beam * 0.35); // Liberty ~8.5 m
+    case "passenger": return Math.max(8,   beam * 0.40); // big liner ~9–10 m
+    case "trawler":   return Math.max(3,   beam * 0.30); // shallow auxiliaries
+    case "tribal":    return Math.max(4,   beam * 0.35); // destroyer ~3.5 m
+    case "flower":    return Math.max(3,   beam * 0.32); // corvette ~3.5 m
+    case "bittern":   return Math.max(4,   beam * 0.35); // sloop ~3 m
+    default:
+      // No class match: still better than the old flat 0.25 — bias
+      // merchant draught a little deeper than escort default to roughly
+      // track the "cargo ship vs warship" weight difference.
+      return (kind === "e") ? Math.max(3, beam * 0.30)
+                            : Math.max(5, beam * 0.32);
+  }
+}
+
+// Per-class total hull height fallback (metres, keel to top of
+// superstructure but not masts) when meta.height is missing. Picked so
+// freeboard = height - draught comes out in the realistic 4–12 m range
+// for each class.
+function fallbackHeightForClass(cls, kind, beam, draught) {
+  switch (cls) {
+    case "tanker":    return draught + Math.max(4, beam * 0.32);
+    case "freighter": return draught + Math.max(5, beam * 0.45); // tall island
+    case "passenger": return draught + Math.max(8, beam * 0.55); // multi-deck
+    case "trawler":   return draught + Math.max(3, beam * 0.40);
+    case "tribal":    return draught + Math.max(5, beam * 0.55); // tall bridge
+    case "flower":    return draught + Math.max(4, beam * 0.50);
+    case "bittern":   return draught + Math.max(5, beam * 0.55);
+    default:          return draught + Math.max(4, beam * 0.40);
+  }
+}
+
+// Build a top-down hull silhouette (THREE.Shape) plus a list of
+// superstructure boxes that approximate the recognizable features of a
+// given ship class from above. Silhouettes are based on public-domain
+// historical references (Liberty / Empire freighter, T2 tanker, Flower /
+// Tribal / Bittern escorts) rather than the game's recognition-manual
+// art directly — extracting that art requires Unity asset tools we don't
+// have. Good enough as a first pass; can be refined per-class later when
+// reference screenshots are available.
+//
+// Returned shape is in the X-Y plane with bow at +X (the caller rotates
+// the resulting extrusion so the bow ends up at +Z). Superstructure
+// entries are { w, h, l, x, y, z } box descriptors; the caller positions
+// them relative to the hull after the same rotation.
+function silhouetteForClass(cls, kind, len, beam) {
+  const halfL = len / 2;
+  const halfB = beam / 2;
+  const shape = new THREE.Shape();
+  let ss = [];
+
+  // Helper: draw the hull outline given bow + stern descriptors.
+  //   bow: { style: "rounded"|"pointed"|"fine", len: number }
+  //   stern: { style: "square"|"taper"|"cruiser", len: number }
+  const draw = (bow, stern) => {
+    // Port side: stern → forward to the bow shoulder.
+    const bowSh = halfL - bow.len;
+    const sternSh = -halfL + (stern.len || 0);
+    if (stern.style === "square") {
+      shape.moveTo(-halfL, -halfB);
+      shape.lineTo(bowSh,  -halfB);
+    } else if (stern.style === "taper") {
+      shape.moveTo(-halfL, -halfB * 0.55);
+      shape.lineTo(sternSh, -halfB);
+      shape.lineTo(bowSh,   -halfB);
+    } else { // "cruiser" — rounded stern
+      shape.moveTo(sternSh, -halfB);
+      shape.lineTo(bowSh,   -halfB);
+    }
+    // Bow.
+    if (bow.style === "pointed") {
+      shape.lineTo(halfL, 0);
+      shape.lineTo(bowSh, halfB);
+    } else if (bow.style === "fine") {
+      // Sleek bow: 4-segment polyline per side approximating an ogive
+      // curve from the shoulder down to a point at the tip. More
+      // segments than the original 2 to smooth out the "angled cut"
+      // look that read as a polygonal nose on passenger liners.
+      const xs = [0.25, 0.50, 0.75, 0.95]; // fraction along bow length
+      const ys = [0.85, 0.65, 0.40, 0.15]; // fraction of halfB at each
+      for (let i = 0; i < xs.length; i++) {
+        shape.lineTo(bowSh + bow.len * xs[i], -halfB * ys[i]);
+      }
+      shape.lineTo(halfL, 0);
+      for (let i = xs.length - 1; i >= 0; i--) {
+        shape.lineTo(bowSh + bow.len * xs[i],  halfB * ys[i]);
+      }
+      shape.lineTo(bowSh, halfB);
+    } else { // "rounded"
+      const noseR = Math.min(halfB, bow.len);
+      shape.lineTo(halfL - noseR, -halfB);
+      shape.absarc(halfL - noseR, 0, noseR, -Math.PI / 2, Math.PI / 2, false);
+      shape.lineTo(bowSh, halfB);
+    }
+    // Starboard side back to the stern, mirrored.
+    if (stern.style === "square") {
+      shape.lineTo(-halfL, halfB);
+      shape.lineTo(-halfL, -halfB);
+    } else if (stern.style === "taper") {
+      shape.lineTo(sternSh, halfB);
+      shape.lineTo(-halfL,  halfB * 0.55);
+      shape.lineTo(-halfL, -halfB * 0.55);
+    } else { // cruiser
+      shape.lineTo(sternSh, halfB);
+      // Rounded stern arc: from (sternSh, halfB) around the AFT side
+      // (through angle π = -X direction) to (sternSh, -halfB). Must be
+      // counter-clockwise so the arc bulges aft (outside the hull). The
+      // earlier `clockwise: true` swept through angle 0 instead and cut
+      // an indent INTO the hull at the stern, chopping off ~one beam of
+      // visible length.
+      shape.absarc(sternSh, 0, halfB, Math.PI / 2, -Math.PI / 2, false);
+    }
+  };
+
+  // Superstructure helper: deck-relative position (z runs +bow / -stern).
+  const deck = (l, w, h, zRel, opts) => {
+    ss.push({
+      w: w, h: h, l: l,
+      x: (opts && opts.x) != null ? opts.x : 0,
+      yRel: (opts && opts.yRel) || 0.5,   // 0.5 → box sits with its bottom on the deck
+      z: zRel,
+    });
+  };
+
+  if (cls === "tanker") {
+    // T2-style: long flat hull, slightly rounded bow, tapered stern.
+    // Two deck features — bridge midship, engine room near the stern.
+    draw({ style: "rounded", len: beam * 0.6 },
+         { style: "taper",   len: beam * 0.3 });
+    deck(beam * 0.7, beam * 0.65, beam * 0.5,  0);                   // bridge midship
+    deck(beam * 0.5, beam * 0.55, beam * 0.45, -halfL + beam * 0.7); // engine aft
+  } else if (cls === "freighter") {
+    // Liberty / Empire: rounded bow, square stern, single midship structure.
+    draw({ style: "rounded", len: beam * 0.7 },
+         { style: "square",  len: 0 });
+    deck(beam * 0.9, beam * 0.7, beam * 0.6, -beam * 0.3);           // bridge slightly aft of midship
+  } else if (cls === "trawler") {
+    // Small auxiliary: short rounded hull, single aft deckhouse.
+    draw({ style: "rounded", len: beam * 0.55 },
+         { style: "square",  len: 0 });
+    deck(beam * 0.6, beam * 0.75, beam * 0.5, -halfL + beam * 0.55); // aft wheelhouse
+  } else if (cls === "passenger") {
+    // Liner: fine entry, long midship superstructure, cruiser stern.
+    draw({ style: "fine",    len: beam * 0.95 },
+         { style: "cruiser", len: beam * 0.6 });
+    deck(len * 0.45, beam * 0.78, beam * 0.55, 0);                   // long midship block
+  } else if (cls === "tribal") {
+    // Tribal-class destroyer: very long narrow, clipper bow, bridge fwd,
+    // two midship funnel bumps.
+    draw({ style: "pointed", len: beam * 1.7 },
+         { style: "square",  len: 0 });
+    deck(beam * 0.85, beam * 0.6, beam * 0.5, beam * 0.6);            // bridge fwd
+    deck(beam * 0.45, beam * 0.45, beam * 0.45, -beam * 0.4);         // fwd funnel
+    deck(beam * 0.45, beam * 0.45, beam * 0.45, -beam * 1.3);         // aft funnel
+  } else if (cls === "flower") {
+    // Flower-class corvette: stubby, rounded bow + rounded stern, single
+    // central deckhouse.
+    draw({ style: "rounded", len: beam * 0.55 },
+         { style: "cruiser", len: beam * 0.35 });
+    deck(beam * 0.7, beam * 0.6, beam * 0.5, 0);                      // single central structure
+  } else if (cls === "bittern") {
+    // Bittern-class sloop: medium length, rounded bow, long fwd
+    // forecastle/bridge structure spanning ~halfway to midship.
+    draw({ style: "rounded", len: beam * 0.6 },
+         { style: "cruiser", len: beam * 0.4 });
+    deck(beam * 1.2, beam * 0.6, beam * 0.45, beam * 0.4);            // long fwd structure
+  } else if (kind === "e") {
+    // Generic escort fallback — original pointed-bow shape.
+    draw({ style: "pointed", len: beam * 1.4 },
+         { style: "square",  len: 0 });
+  } else {
+    // Generic merchant fallback — original rounded-bow shape.
+    draw({ style: "rounded", len: beam * 0.5 },
+         { style: "square",  len: 0 });
+  }
+
+  return { shape, superstructure: ss };
+}
+
 function meshForEntity(id, kind, snap) {
   let mesh;
   // For all elongated shapes we bake a rotation into the geometry so the
@@ -4589,63 +5076,99 @@ function meshForEntity(id, kind, snap) {
   // be set directly from the game's yaw without sign-fiddling and the
   // heading visualises correctly.
   if (kind === "u") {
-    // U-boat: cigar shape. Bumped up from 4×56 → 8×80 and the mesh is
-    // forced to render after the trail lines (renderOrder 50) so a tight
-    // turn doesn't bury the hull inside its own dashed trail. A constant
-    // emissive lift makes the boat read brighter than the trail it sits
-    // on top of, which shares the same per-boat colour.
+    // U-boat: Type-VII/IX silhouette built from a tapered cigar hull plus
+    // a conning-tower box. Earlier versions were a single CapsuleGeometry,
+    // which read as a generic submarine but lacked the recognizable U-boat
+    // profile (pointed bow, tapered stern, central conning tower). The
+    // group is rotated so its natural orientation is along +Z (north) and
+    // mesh.rotation.y = yaw still works unchanged. Both children carry
+    // renderOrder 50 so they draw after trail lines — keeps tight-turn
+    // trails from burying the hull.
     const tint = colorForUboat(id, snap && snap.n);
-    const geo = new THREE.CapsuleGeometry(8, 80, 6, 12);
-    geo.rotateX(Math.PI / 2);   // long axis +Y -> +Z (north by default)
     const mat = new THREE.MeshLambertMaterial({
       color: tint,
       emissive: tint,
       emissiveIntensity: 0.35,
     });
-    mesh = new THREE.Mesh(geo, mat);
+
+    // Hull: LatheGeometry from a side-view profile, revolved around Y to
+    // build a solid of revolution, then rotated 90° so the long axis is
+    // +Z. The profile gives a longer/sharper stern taper than bow (matches
+    // U-boat shape — the propeller cone is longer than the bow).
+    const halfLen = 48;          // total hull length ~96 m, comparable to the old capsule
+    const beamR   = 6;           // max radius — slimmer than the old r=8 capsule
+    const profile = [
+      new THREE.Vector2(0.0,            halfLen),                // bow tip
+      new THREE.Vector2(beamR * 0.45,   halfLen -  6),
+      new THREE.Vector2(beamR * 0.85,   halfLen - 14),
+      new THREE.Vector2(beamR,          halfLen - 22),           // bow shoulder
+      new THREE.Vector2(beamR,         -halfLen + 28),           // stern shoulder
+      new THREE.Vector2(beamR * 0.78,  -halfLen + 14),
+      new THREE.Vector2(beamR * 0.32,  -halfLen +  5),
+      new THREE.Vector2(0.0,           -halfLen),                // stern tip
+    ];
+    const hullGeo = new THREE.LatheGeometry(profile, 16);
+    hullGeo.rotateX(Math.PI / 2);   // long axis +Y -> +Z (north by default)
+    const hull = new THREE.Mesh(hullGeo, mat);
+    hull.renderOrder = 50;
+
+    // Conning tower: shorter, narrower box sitting on top of the hull,
+    // slightly aft of midship to match the real-world placement on
+    // Type VII / IX boats. Pokes ~5 m above the hull crown so it's
+    // legible from the top-down camera at typical zoom levels.
+    const towerGeo = new THREE.BoxGeometry(beamR * 0.7, beamR * 0.95, 14);
+    towerGeo.translate(0, beamR + 2.2, -3);
+    const tower = new THREE.Mesh(towerGeo, mat);
+    tower.renderOrder = 50;
+
+    mesh = new THREE.Group();
+    mesh.add(hull);
+    mesh.add(tower);
     mesh.renderOrder = 50;
   } else if (kind === "m" || kind === "e") {
-    // Ship: extruded silhouette with a rounded bow at +X (which we
-    // rotate to +Z below so the natural orientation matches the U-boat
-    // and torpedo conventions, north-up at yaw 0). Length/beam come
-    // from boid_meta (MissionMap 1.5.1+ captures BoxCollider.size *
-    // lossyScale); legacy recordings fall back to kind-typical
-    // defaults. Height is proportional to beam so a 90 m corvette and
-    // a 200 m liner look like different-sized boats from the side, not
-    // identical flat plates.
+    // Ship: extruded silhouette + superstructure boxes. Per-class
+    // silhouettes (Tanker / Freighter / Trawler / Passenger / Tribal /
+    // Flower / Bittern) come from silhouetteForClass; the recorder
+    // captures the ship-type name in snap.n which we feed to
+    // shipClassFromName. Unknown classes fall back to the original
+    // rounded-bow merchant / pointed-bow escort generic shapes.
+    //
+    // Length/beam still come from boid_meta (MissionMap 1.5.1+ captures
+    // BoxCollider.size * lossyScale); legacy recordings fall back to
+    // kind-typical defaults. Height is proportional to beam so a 90 m
+    // corvette and a 200 m liner look like different-sized boats from
+    // the side, not identical flat plates.
     const meta = boidMetaById ? boidMetaById.get(id) : null;
     let   len  = (meta && meta.length > 1) ? meta.length : (kind === "m" ? 120 : 90);
     let   beam = (meta && meta.beam   > 1) ? meta.beam   : (kind === "m" ? 18  : 12);
     if (beam > len * 0.35) beam = len * 0.35;     // anti-flatten guard
 
-    // Hull silhouette (top-down view): squared stern at -X. Bow style
-    // depends on ship kind — merchants get a soft semicircle, escorts
-    // get a longer pointed bow (warships are sleeker IRL and the
-    // sharper nose reads instantly as "escort" against the merchant's
-    // blunter profile).
-    const halfL = len / 2;
-    const shape = new THREE.Shape();
-    if (kind === "e") {
-      // Pointed bow: square sides up to ~one beam from the bow, then
-      // straight diagonals converge to a point at +X.
-      const bowLen = beam * 1.4;     // length of the tapered nose
-      shape.moveTo(-halfL,         -beam / 2);
-      shape.lineTo(halfL - bowLen, -beam / 2);
-      shape.lineTo(halfL,           0);
-      shape.lineTo(halfL - bowLen,  beam / 2);
-      shape.lineTo(-halfL,          beam / 2);
-      shape.lineTo(-halfL,         -beam / 2);
-    } else {
-      // Merchant rounded bow: half-circle of radius beam/2 at +X.
-      const noseR = beam / 2;
-      shape.moveTo(-halfL, -noseR);
-      shape.lineTo(halfL - noseR, -noseR);
-      shape.absarc(halfL - noseR, 0, noseR, -Math.PI / 2, Math.PI / 2, false);
-      shape.lineTo(-halfL, noseR);
-      shape.lineTo(-halfL, -noseR);
-    }
-    const hullHeight = Math.max(2, beam * 0.6);
-    const geo = new THREE.ExtrudeGeometry(shape, {
+    const cls = shipClassFromName(snap && snap.n, kind);
+    const sil = silhouetteForClass(cls, kind, len, beam);
+
+    // Hull geometry: split into below-water (draught, stretched by
+    // DEPTH_STRETCH like u-boat depth) and above-water (freeboard,
+    // unstretched). Total extrusion depth covers both; the translate
+    // below puts the waterline at y = 0 so the keel sits at
+    // -stretchY(draught) and the deck at +freeboard.
+    //
+    // 1.9.9+ recordings carry meta.draught and meta.height from the
+    // ship's stats component; pre-1.9.9 falls back to per-class
+    // historical estimates (a flat beam * 0.25 was the same heuristic
+    // for every hull and put a passenger liner's keel ~4 m too shallow,
+    // so torpedoes at 7 m visually passed under hulls they'd actually
+    // hit in-game).
+    const rawDraught = (meta && meta.draught > 0)
+      ? meta.draught
+      : fallbackDraughtForClass(cls, kind, beam);
+    const totalH    = (meta && meta.height   > 0)
+      ? meta.height
+      : fallbackHeightForClass(cls, kind, beam, rawDraught);
+    const freeboard = Math.max(1.5, totalH - rawDraught);
+    const submerged = stretchY(rawDraught);   // exaggerated like u-boat depth
+    const hullHeight = submerged + freeboard;
+
+    const geo = new THREE.ExtrudeGeometry(sil.shape, {
       depth: hullHeight,
       bevelEnabled: false,
       curveSegments: 16,
@@ -4656,12 +5179,38 @@ function meshForEntity(id, kind, snap) {
     // the bow (+X in shape space) points to +Z (north by default).
     geo.rotateX(-Math.PI / 2);
     geo.rotateY(-Math.PI / 2);
-    // Sit the hull on the water: shift down so the deck plane is at y=0
-    // and the keel hangs below — half height submerged reads as a real
-    // displacement profile rather than a slab perched on the surface.
-    geo.translate(0, -hullHeight * 0.4, 0);
+    // Shift so the waterline (y=0) sits between the submerged keel
+    // (y = -submerged) and the deck (y = +freeboard). Lets torpedo
+    // depths line up with the actual underwater hull they'd strike.
+    geo.translate(0, -submerged, 0);
     const mat = new THREE.MeshLambertMaterial({ color: kind === "m" ? 0xc084fc : 0xef4444 });
-    mesh = new THREE.Mesh(geo, mat);
+
+    // If the silhouette carries superstructure boxes, build a Group so
+    // we can compose hull + deck features. Otherwise emit a plain Mesh
+    // (cheaper, same shape).
+    if (sil.superstructure && sil.superstructure.length > 0) {
+      const group = new THREE.Group();
+      group.add(new THREE.Mesh(geo, mat));
+      // Deck plane sits at y = +freeboard after the rotate + translate
+      // above. Boxes go on top of it; box center y = freeboard +
+      // (box height / 2) so the bottom face touches the deck.
+      const deckY = freeboard;
+      // Shape's X was port-stbd (beam direction). After rotateY(-π/2)
+      // the original shape-X maps to world -X. Shape's "+X = bow" maps
+      // to world +Z. So a feature whose silhouette position is (zRel)
+      // along the fore-aft axis lands at world z = zRel; a port-stbd
+      // offset (x in our deck()) maps to world x = -x. We negate to
+      // keep "x positive = starboard" intuitive for callers.
+      for (const b of sil.superstructure) {
+        const box = new THREE.BoxGeometry(b.w, b.h, b.l);
+        box.translate(-b.x, deckY + b.h / 2, b.z);
+        const m = new THREE.Mesh(box, mat);
+        group.add(m);
+      }
+      mesh = group;
+    } else {
+      mesh = new THREE.Mesh(geo, mat);
+    }
   } else if (kind === "t") {
     // Torpedo: a proper fish silhouette — rounded nose, cylindrical body,
     // tapered tail, and a little 4-blade propeller. Built as a Group so
@@ -4720,14 +5269,38 @@ function meshForEntity(id, kind, snap) {
 
 // Sink animation: when a ship's track ends mid-mission and it qualifies
 // as a kill (same predicate as ensureSunkBoidLabel — track ended early
-// + slow at last sample), keep rendering the hull for SINK_ANIM_S after
-// the last sample, descending from surface to SINK_DEPTH_M with an
-// ease-in curve and fading out so the wreck visibly slips beneath the
-// waves before being replaced by the parked "sank here" label.
-const SINK_ANIM_S       = 15;    // seconds of playT to animate the descent
-const SINK_DEPTH_M      = -55;   // final mesh Y at end of anim
-const SINK_FADE_START   = 0.55;  // 0..1 phase at which opacity starts dropping
-// Returns null (not sinking) or { phase, y, alpha } during the descent.
+// + slow at last sample), keep rendering the hull descending from the
+// surface to the local seabed with an ease-in curve. Previously the
+// hull disappeared 15 s after the last sample; now it parks at depth
+// and stays visible, so the captain can still find the wreck on the
+// map and see where the convoy lost a hull.
+const SINK_ANIM_S       = 15;    // seconds of playT for the descent itself
+const SINK_DEPTH_FALLBACK_M = 60; // fallback wreck depth (m) when bathymetry has
+                                  // no reading near the last position
+
+// Resolve the seabed depth (positive metres) at a world XZ, using the
+// passive bathymetry cells the viewer accumulates from u-boat samples
+// and depth_ping events. Returns null if we don't have any nearby
+// reading — caller falls back to the constant SINK_DEPTH_FALLBACK_M so
+// the wreck still parks visibly under the surface.
+function seabedDepthAt(x, z) {
+  if (!Array.isArray(_bathymetryCells) || _bathymetryCells.length === 0) return null;
+  // 50 m bin width matches buildBathymetry's quantisation; require the
+  // nearest cell to be within ~300 m horizontally to count.
+  const MAX_RADIUS_SQ = 300 * 300;
+  let bestD = null, bestSq = MAX_RADIUS_SQ;
+  for (const c of _bathymetryCells) {
+    const dx = c.x - x, dz = c.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < bestSq) { bestSq = d2; bestD = c.depth; }
+  }
+  return bestD;
+}
+
+// Returns null (not sinking) or { phase, y, alpha, parked } during /
+// after the descent. After SINK_ANIM_S the function keeps returning
+// the final state with parked=true so the wreck stays at depth instead
+// of vanishing — the caller no longer treats "anim done" as "hide".
 function sinkAnimState(id, tr, t) {
   if (tr.kind !== "m" && tr.kind !== "e") return null;
   const samples = tr.samples;
@@ -4740,20 +5313,22 @@ function sinkAnimState(id, tr, t) {
   if (last.s != null && last.s > SUNK_LABEL_MAX_LAST_S) return null;
   const dt = t - last.t;
   if (dt < 0) return null;                // hasn't sunk yet at playT
-  if (dt > SINK_ANIM_S) return null;      // anim complete, parked label takes over
-  const phase = dt / SINK_ANIM_S;
+  // Resolve final wreck depth from bathymetry; fall back to a sensible
+  // visible depth when there's no nearby reading.
+  const seabedM = seabedDepthAt(last.x, last.z);
+  const finalY = (seabedM != null && seabedM > 0)
+    ? stretchY(-seabedM)
+    : stretchY(-SINK_DEPTH_FALLBACK_M);
+  const parked = dt >= SINK_ANIM_S;
+  const phase = parked ? 1 : (dt / SINK_ANIM_S);
   // Ease-in: the hull holds at the surface for a beat, then accelerates.
   // phase^2 gives the classic "list, slip, plunge" feel.
   const ease = phase * phase;
-  const y = ease * SINK_DEPTH_M;
-  // Fade from full opacity to 0 across the back half of the animation
-  // so the mesh blends out before the parked label appears at t+SINK_ANIM_S.
-  let alpha = 1;
-  if (phase > SINK_FADE_START) {
-    alpha = 1 - (phase - SINK_FADE_START) / (1 - SINK_FADE_START);
-    if (alpha < 0) alpha = 0;
-  }
-  return { phase, y, alpha };
+  const y = ease * finalY;
+  // Keep the wreck fully opaque — visible forever on the map, parked
+  // at the seabed once the descent completes.
+  const alpha = 1;
+  return { phase, y, alpha, parked };
 }
 
 function update3D() {
@@ -4789,6 +5364,27 @@ function update3D() {
       if (!mesh) continue;
       scene3d.add(mesh);
       sceneMeshes.set(id, mesh);
+    }
+    // Per-u-boat View toggle: when off, hide the mesh + its label, depth
+    // pole, glow, search-light and HP bar entirely. Trail visibility is
+    // a separate Trail toggle handled in the trail-render loop.
+    if (tr.kind === "u") {
+      const crewIdx = (typeof id === "string" && id.charAt(0) === "u")
+        ? parseInt(id.substring(1), 10) : -1;
+      if (Number.isFinite(crewIdx) && crewIdx >= 0 && crewIdx < 4 &&
+          !uboatViewVisible[crewIdx]) {
+        mesh.visible = false;
+        // Hide auxiliaries linked by id.
+        const lbl  = labelSprites.get(id);     if (lbl)  lbl.sprite.visible = false;
+        const pole = depthPoles.get(id);       if (pole) pole.visible = false;
+        const glow = uboatGlows.get(id);       if (glow) glow.halo.visible = false;
+        const ins  = insigniaSprites.get(id);  if (ins)  ins.visible = false;
+        const hp   = hpBars.get(id);           if (hp)   hp.sprite.visible = false;
+        const wake = wakeMeshes.get(id);       if (wake) wake.visible = false;
+        continue;
+      } else {
+        mesh.visible = true;
+      }
     }
     // Position: world X/Z map directly. Y comes from snap.d (uboats) or
     // snap.y (depth charges have world-Y, no separate depth). Uboats are
@@ -4832,7 +5428,7 @@ function update3D() {
     // once the descent finishes.
     if ((tr.kind === "m" || tr.kind === "e") && !sinkState) {
       updateBoidLabel3D(id, tr.kind, snap, mesh.position);
-      updateBoidStateIcons3D(id, snap, mesh.position);
+      updateBoidStateIcons3D(id, tr.kind, snap, mesh.position);
     }
     // Health bar above the entity (boids that report hp — u-boats now
     // show HP as a "♥NN%" segment in their floating label instead).
@@ -4844,7 +5440,7 @@ function update3D() {
     // Vertical "depth pole" from water surface down to the entity. Gives
     // the 3D view an unambiguous read on how deep something actually is,
     // since the water column itself is featureless.
-    if (tr.kind === "u" || tr.kind === "d") {
+    if (tr.kind === "u" || tr.kind === "d" || tr.kind === "t") {
       updateDepthPole(id, tr.kind, snap, mesh.position);
     }
     // Heading (yaw): 0 = +Z (north), increasing toward +X (east).
@@ -4867,8 +5463,14 @@ function update3D() {
     // entities (torpedoes, ships) keep their flat-on-water default —
     // we don't record their tilt and forcing it to 0 here is implicit.
     if (tr.kind === "u" && (snap.pi != null || snap.ro != null)) {
-      const pitchRad = ((snap.pi || 0) * Math.PI) / 180;
-      const rollRad  = ((snap.ro || 0) * Math.PI) / 180;
+      // Optional ×3 amplification — Wolfpack's u-boat dive pitch is
+      // realistic (5–10° typical, 15–20° emergency) and visually subtle
+      // at oblique camera angles. Toggle lives in the Display panel;
+      // numeric readouts in the right menu show the REAL value either
+      // way so the amplification doesn't lie about what's recorded.
+      const amp = tiltAmplifyOn ? 3 : 1;
+      const pitchRad = ((snap.pi || 0) * amp * Math.PI) / 180;
+      const rollRad  = ((snap.ro || 0) * amp * Math.PI) / 180;
       mesh.rotation.order = "YXZ";
       mesh.rotation.set(pitchRad, yaw, rollRad);
     }
@@ -4930,6 +5532,7 @@ function update3D() {
       if (bi) {
         if (bi.alert) { scene3d.remove(bi.alert); bi.alert.material.map.dispose(); bi.alert.material.dispose(); }
         if (bi.fire)  { scene3d.remove(bi.fire);  bi.fire.material.map.dispose();  bi.fire.material.dispose();  }
+        if (bi.flee)  { scene3d.remove(bi.flee);  bi.flee.material.map.dispose();  bi.flee.material.dispose();  }
         boidIcons.delete(id);
       }
       const hb = hpBars.get(id);
@@ -5344,6 +5947,11 @@ const TRAIL_DIVE_DEPTH_M = 7;
 
 function updateTracks3D() {
   if (!data) return;
+  // Live-mode chart drawings reveal progressively as currentT advances —
+  // re-evaluate per-object visibility every frame when at least one
+  // boat is in "live" mode. anyChartLive() short-circuits on the common
+  // case where every boat is Off or Full, costing nothing.
+  if (anyChartLive()) applyChartVisibility();
   for (const id in tracks) {
     const tr = tracks[id];
     const style = TRACK_STYLE_3D[tr.kind];
@@ -5385,6 +5993,18 @@ function updateTracks3D() {
     // the last 500 m. Merchants stay uncapped — their full patrol track
     // is the most useful single visualisation for the player. The
     // sidebar "U-boat full" toggle promotes u-boats to uncapped too.
+    // Per-uboat trail visibility — hide the line entirely when the
+    // user's toggled this boat's Trail off in the right-side menu.
+    if (tr.kind === "u") {
+      const crewIdx = (typeof id === "string" && id.charAt(0) === "u")
+        ? parseInt(id.substring(1), 10) : -1;
+      if (Number.isFinite(crewIdx) && crewIdx >= 0 && crewIdx < 4 &&
+          !uboatTrailVisible[crewIdx]) {
+        const line = sceneTrails.get(id);
+        if (line) line.visible = false;
+        continue;
+      }
+    }
     let firstIdx = 0;
     let tailM = 0;
     if      (tr.kind === "t")                tailM = TORP_TRAIL_M;
@@ -5590,6 +6210,7 @@ loadData = function(json) {
     for (const [id, e]    of boidIcons)     {
       if (e.alert) { scene3d.remove(e.alert); e.alert.material.map.dispose(); e.alert.material.dispose(); }
       if (e.fire)  { scene3d.remove(e.fire);  e.fire.material.map.dispose();  e.fire.material.dispose();  }
+      if (e.flee)  { scene3d.remove(e.flee);  e.flee.material.map.dispose();  e.flee.material.dispose();  }
     }
     for (const [id, e]    of hpBars)        { scene3d.remove(e.sprite); e.texture.dispose(); e.sprite.material.dispose(); }
     for (const [i,  lbl]  of dmgLabels)     { scene3d.remove(lbl); lbl.material.map.dispose(); lbl.material.dispose(); }
@@ -5604,6 +6225,10 @@ loadData = function(json) {
   wakeMeshes.clear();
   searchLights.clear();
   sceneMeshes.clear();
+  // Invalidate per-frame caches keyed on currentT so a stale value from
+  // the previous JSON can't carry over when the new recording happens
+  // to land on the same scrub position.
+  _convoyFleeingCacheT = -1;
   eventSprites.clear();
   statusSprites.clear();
   sceneTrails.clear();
@@ -5824,12 +6449,24 @@ function rebuildUboatStats() {
   // Sort hits within each boat by time so the table reads chronologically.
   for (const k in hitsByOwner) hitsByOwner[k].sort((a, b) => a.t - b.t);
 
-  // 4 standard slots — recording may attribute hits to higher crew ids
-  // (host runs >4), so iterate over the union too.
-  const crews = new Set();
-  for (let i = 0; i < 4; i++) crews.add(i);
-  for (const k in launchesByOwner) crews.add(+k);
-  for (const k in hitsByOwner)     crews.add(+k);
+  // Only show crew indices that actually have a u-boat track in this
+  // recording — otherwise unused crew slots (e.g. "U-552 0 hits · 0
+  // misses" when nobody played that slot) clutter the panel. Spawned
+  // crews are derived from `tracks`: ids of the form "u<n>" with
+  // kind === "u".
+  const spawnedCrews = new Set();
+  for (const id in tracks) {
+    if (tracks[id].kind !== "u") continue;
+    if (typeof id === "string" && id.charAt(0) === "u") {
+      const n = parseInt(id.substring(1), 10);
+      if (Number.isFinite(n)) spawnedCrews.add(n);
+    }
+  }
+  // Union with any crews that show up only in launch/hit events (rare
+  // edge case where the boat fired but never had a sample recorded).
+  const crews = new Set(spawnedCrews);
+  for (const k in launchesByOwner) if (spawnedCrews.has(+k)) crews.add(+k);
+  for (const k in hitsByOwner)     if (spawnedCrews.has(+k)) crews.add(+k);
   const ordered = Array.from(crews).sort((a, b) => a - b);
 
   for (const crewIdx of ordered) {
@@ -5868,7 +6505,17 @@ function rebuildUboatStats() {
         const tSpan = document.createElement("span"); tSpan.textContent = gt;
         const dSpan = document.createElement("span");
         if (info) {
-          dSpan.className = "delta";
+          // Colour by absolute distance from the closest TOI:
+          //   ≤  1 s → purple (frame-perfect)
+          //   ≤ 10 s → green  (well inside the window)
+          //   ≤ 60 s → yellow (in the rough)
+          //   > 60 s → red    (out of band)
+          const absD = Math.abs(info.d);
+          let tier = "toiRed";
+          if      (absD <=  1) tier = "toiPurple";
+          else if (absD <= 10) tier = "toiGreen";
+          else if (absD <= 60) tier = "toiYellow";
+          dSpan.className = "delta " + tier;
           dSpan.textContent = "Δ " + fmtTOIDelta(info.d);
         } else {
           dSpan.className = "deltaNone";
@@ -5884,10 +6531,13 @@ function rebuildUboatStats() {
 }
 
 // Trail visibility toggles backed by checkboxes in the sidebar "Trails"
-// panel. Defaults: u-boats keep their 10 km tail (full=false), convoy +
-// escort trails both on. Re-applied on every render via updateTracks3D —
-// changes only need to mark the scene dirty.
-const trailToggles = { uboatFull: false, convoy: true, escort: true };
+// panel. Defaults: convoy + escort trails OFF (cleaner default scene —
+// user re-enables when investigating convoy maneuvering). U-boat trail
+// visibility moved to per-boat toggle buttons in the right-side
+// uboatList (uboatTrailVisible[] below); uboatFull stays here as the
+// always-on full-track behaviour since the per-boat toggle drops the
+// 10-km tail-cap concept.
+const trailToggles = { uboatFull: true, convoy: false, escort: false };
 function _wireTrailToggle(id, key) {
   const el = $(id);
   if (!el) return;
@@ -5899,9 +6549,130 @@ function _wireTrailToggle(id, key) {
     if (typeof markRender3DDirty === "function") markRender3DDirty();
   });
 }
-_wireTrailToggle("trailUboatFull", "uboatFull");
 _wireTrailToggle("trailConvoyOn",  "convoy");
 _wireTrailToggle("trailEscortOn",  "escort");
+
+// Per-u-boat visibility state, indexed by crew index (0..3). Drive the
+// View / Trail / Nav toggles on each uboatList row. All persisted to
+// localStorage so a captain's preferred filtering survives reloads.
+// Defaults: view on, trail on, nav (chart drawings) off — the existing
+// uboatChartVisible array already starts false-false-false-false.
+const uboatViewVisible  = [true, true, true, true];
+const uboatTrailVisible = [true, true, true, true];
+const UBOAT_VIEW_STORE  = "missionmap.uboatView.v1";
+const UBOAT_TRAIL_STORE = "missionmap.uboatTrail.v1";
+const UBOAT_CHART_STORE = "missionmap.uboatChart.v1";
+function _loadPerBoatBools(key, target) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    for (let i = 0; i < target.length && i < arr.length; i++) target[i] = !!arr[i];
+  } catch { }
+}
+function _savePerBoatBools(key, src) {
+  try { localStorage.setItem(key, JSON.stringify(src.slice(0, 4))); } catch { }
+}
+// Chart mode is the same shape but stores enums (strings) instead of
+// booleans. Migrates legacy boolean entries (true → "full", false → "off")
+// so users upgrading from the on/off Nav button don't lose their
+// existing preferences.
+function _loadChartModes(key, target) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    for (let i = 0; i < target.length && i < arr.length; i++) {
+      const v = arr[i];
+      if (typeof v === "string" && CHART_MODES.indexOf(v) >= 0) target[i] = v;
+      else if (v === true)  target[i] = "full";
+      else if (v === false) target[i] = "off";
+    }
+  } catch { }
+}
+_loadPerBoatBools(UBOAT_VIEW_STORE,  uboatViewVisible);
+_loadPerBoatBools(UBOAT_TRAIL_STORE, uboatTrailVisible);
+_loadChartModes(UBOAT_CHART_STORE,   uboatChartVisible);
+
+// Depth-stretch toggle: flips DEPTH_STRETCH between 5 (on) and 1 (off)
+// and invalidates every cached mesh / pole / bathymetry buffer that
+// bakes the stretch into its geometry. The next render rebuilds with
+// the new value. Persisted to localStorage so the captain's preference
+// survives reloads.
+const DEPTH_STRETCH_STORE_KEY = "missionmap.depthStretch.v1";
+function setDepthStretchOn(on) {
+  DEPTH_STRETCH = on ? 5 : 1;
+  try { localStorage.setItem(DEPTH_STRETCH_STORE_KEY, on ? "1" : "0"); } catch { }
+
+  // Clear entity meshes (ship hulls bake submerged = stretchY(draught)
+  // into their extruded geometry — must rebuild on the next render).
+  if (typeof scene3d !== "undefined" && scene3d) {
+    if (typeof sceneMeshes !== "undefined") {
+      for (const [, mesh] of sceneMeshes) scene3d.remove(mesh);
+      sceneMeshes.clear();
+    }
+    // Depth poles cache vertex positions across DEPTH_POLE_SEGMENTS — drop
+    // them so the next updateDepthPole rebuilds at the new scale.
+    if (typeof depthPoles !== "undefined") {
+      for (const [, pole] of depthPoles) {
+        scene3d.remove(pole);
+        try { pole.geometry.dispose(); pole.material.dispose(); } catch { }
+      }
+      depthPoles.clear();
+    }
+    // Trails are line-strips with stretched Y; redraw from scratch.
+    if (typeof sceneTrails !== "undefined") {
+      for (const [, line] of sceneTrails) scene3d.remove(line);
+      sceneTrails.clear();
+    }
+    // Bathymetry: a Points cloud with stretchY-baked positions. Drop the
+    // mesh; buildBathymetry() reruns on the next updateTracks3D pass when
+    // the rebuild loop detects bathymetryMesh == null.
+    if (typeof bathymetryMesh !== "undefined" && bathymetryMesh) {
+      scene3d.remove(bathymetryMesh);
+      try { bathymetryMesh.geometry.dispose(); bathymetryMesh.material.dispose(); } catch { }
+      bathymetryMesh = null;
+    }
+  }
+  if (typeof markRender3DDirty === "function") markRender3DDirty();
+}
+
+const _depthStretchToggleEl = $("depthStretchToggle");
+if (_depthStretchToggleEl) {
+  // Restore persisted preference (defaults to ON if absent / invalid).
+  let stored = null;
+  try { stored = localStorage.getItem(DEPTH_STRETCH_STORE_KEY); } catch { }
+  const on = stored == null ? true : stored === "1";
+  _depthStretchToggleEl.checked = on;
+  if (!on) setDepthStretchOn(false);
+  _depthStretchToggleEl.addEventListener("change", () => {
+    setDepthStretchOn(_depthStretchToggleEl.checked);
+    // If a recording is loaded, also kick a buildBathymetry rebuild now
+    // (the next render pass will trigger it via the null-mesh guard but
+    // re-running here keeps the depth cloud current immediately).
+    if (data && typeof buildBathymetry === "function") buildBathymetry();
+  });
+}
+
+// Tilt amplification — visual ×3 on u-boat pitch/roll. Real angles still
+// flow through the numeric readouts in the right menu so the captain
+// always sees the truth; this only affects the rendered mesh tilt.
+let tiltAmplifyOn = false;
+const TILT_AMPLIFY_STORE_KEY = "missionmap.tiltAmplify.v1";
+const _tiltAmpToggleEl = $("tiltAmplifyToggle");
+if (_tiltAmpToggleEl) {
+  let stored = null;
+  try { stored = localStorage.getItem(TILT_AMPLIFY_STORE_KEY); } catch { }
+  tiltAmplifyOn = stored === "1";
+  _tiltAmpToggleEl.checked = tiltAmplifyOn;
+  _tiltAmpToggleEl.addEventListener("change", () => {
+    tiltAmplifyOn = _tiltAmpToggleEl.checked;
+    try { localStorage.setItem(TILT_AMPLIFY_STORE_KEY, tiltAmplifyOn ? "1" : "0"); } catch { }
+    if (typeof markRender3DDirty === "function") markRender3DDirty();
+  });
+}
 
 // Collapsible-panel handler: a header button toggles its sibling .panelBody
 // by adding/removing `.collapsed` on the parent .panel. Applies to both
@@ -5984,6 +6755,32 @@ function tooltipForHover(hov) {
     const pistol   = launch.magnetic ? "magnetic" : "impact";
     const gyroDeg  = launch.gyro != null ? launch.gyro.toFixed(0) + "°" : "—";
     const depthM   = launch.depthSet != null ? launch.depthSet.toFixed(1) + " m" : "—";
+    // Actual running depth from the torpedo's samples. depthSet is what
+    // the captain dialled in; the eel doesn't always run exactly at that
+    // depth (early run, wave deflection, mechanical slop). Show
+    // avg + (min..max) so any drift from the setting is visible.
+    const tr = tracks[id];
+    let runDepthRow = "";
+    if (tr && tr.samples && tr.samples.length > 0) {
+      let mn = Infinity, mx = -Infinity, sum = 0, n = 0;
+      for (const s of tr.samples) {
+        if (s.y == null) continue;
+        const d = Math.max(0, -s.y);
+        if (d < mn) mn = d;
+        if (d > mx) mx = d;
+        sum += d; n++;
+      }
+      if (n > 0) {
+        const avg = sum / n;
+        const spread = (mx - mn);
+        // Tight runs (spread < 0.3 m) collapse to just "Xm avg"; sloppy
+        // runs show the full envelope.
+        const txt = spread < 0.3
+          ? `${avg.toFixed(1)} m avg`
+          : `${avg.toFixed(1)} m avg · ${mn.toFixed(1)}–${mx.toFixed(1)} m`;
+        runDepthRow = `<div class="row"><span class="k">Run depth</span><span>${txt}</span></div>`;
+      }
+    }
     // Run distance: launch → impact for hits, or launch → last-known-position
     // for misses. Tagged "Run" for hits, "Last seen" for misses so it's clear
     // whether the value is the actual range to target or just the trail length.
@@ -5992,7 +6789,7 @@ function tooltipForHover(hov) {
             <div class="row"><span class="k">Fired at</span><span>${fmtGameTimeAtSec(launch.t)}</span></div>
             <div class="row"><span class="k">Type</span><span>${typeStr} · ${speedStr} · ${pistol}</span></div>
             <div class="row"><span class="k">Gyro angle</span><span>${gyroDeg}</span></div>
-            <div class="row"><span class="k">Depth setting</span><span>${depthM}</span></div>${rangeRow}`;
+            <div class="row"><span class="k">Depth setting</span><span>${depthM}</span></div>${runDepthRow}${rangeRow}`;
   }
   if (hov.kind === "hit") {
     const ev = data.events[hov.evIdx];
@@ -6060,10 +6857,53 @@ function tooltipForHover(hov) {
     }
     if (hits.length) {
       html += `<div class="row"><span class="k">Hits</span><span>${hits.length}</span></div>`;
+      // Resolve actual HP delta per hit from the target's boid samples.
+      // The hit event's `dmg` is the torpedo's NOMINAL damage constant
+      // (Torpedo2.TORPEDO_DAMAGE), not the percentage of HP this ship
+      // actually lost — a passenger liner with 200 HP takes 50 % from
+      // a 100-dmg torpedo, while a trawler with 50 HP would be
+      // overkilled. Compute the real per-hit % from the bracketing
+      // boid samples around h.t. Multiple hits inside a single 15 s
+      // boid sample bracket share their bracket's total drop (shown
+      // suffixed " ÷N" to flag the shared estimate).
+      const tgtTr = id && tracks[id];
+      const tgtSamples = tgtTr ? tgtTr.samples : null;
+      const hitTimes = hits.map(h => h.t).sort((a, b) => a - b);
+      const hpDeltaForHit = (hitT) => {
+        if (!tgtSamples || !tgtSamples.length) return null;
+        // Bracketing samples.
+        let preIdx = -1, postIdx = -1;
+        for (let i = 0; i < tgtSamples.length; i++) {
+          if (tgtSamples[i].t < hitT) preIdx = i;
+          else if (tgtSamples[i].t >= hitT) { postIdx = i; break; }
+        }
+        if (preIdx < 0 || postIdx < 0) return null;
+        const pre  = tgtSamples[preIdx];
+        const post = tgtSamples[postIdx];
+        if (pre.hp == null || post.hp == null) return null;
+        const drop = pre.hp - post.hp;
+        if (drop <= 0) return null;
+        // How many hits fall between these two samples?
+        let n = 0;
+        for (const ht of hitTimes) {
+          if (ht >= pre.t && ht <= post.t) n++;
+        }
+        if (n === 0) n = 1;
+        return { pct: (drop * 100) / n, shared: n > 1 };
+      };
       for (const h of hits) {
         const ownerName = h.owner != null ? crewIdxBoatName(h.owner) : "?";
         const d = deltaToTOI(h.t);
-        html += `<div class="row"><span class="k">${ownerName} · ${fmtGameTimeAtSec(h.t)}</span><span>${h.dmg ? "-"+Math.round(h.dmg) : ""}${d ? " (Δ "+d+")" : ""}</span></div>`;
+        const dmgInfo = hpDeltaForHit(h.t);
+        let dmgTxt = "";
+        if (dmgInfo) {
+          dmgTxt = "-" + dmgInfo.pct.toFixed(0) + "%";
+          if (dmgInfo.shared) dmgTxt += "*";
+        } else if (h.dmg != null) {
+          // Fallback: nominal torpedo damage units.
+          dmgTxt = "-" + Math.round(h.dmg) + " dmg";
+        }
+        html += `<div class="row"><span class="k">${ownerName} · ${fmtGameTimeAtSec(h.t)}</span><span>${dmgTxt}${d ? " (Δ "+d+")" : ""}</span></div>`;
       }
     } else {
       html += `<div class="row"><span class="k">No recorded hits</span><span></span></div>`;
@@ -6364,31 +7204,53 @@ function rebuildUboatList() {
       ? `<img class="insignia" src="${sigPath}" onerror="this.outerHTML='<span class=\\'dot\\' style=\\'background:${col.fill || "#666"};outline:1px solid ${dotColor}\\'></span>'">`
       : `<span class="dot" style="background:${col.fill || "#666"};outline:1px solid ${dotColor}"></span>`;
     // Recover the owner index from the entity id ("u<n>" by convention).
-    // Used by the per-boat nav-chart toggle below.
+    // Used by the per-boat View/Nav/Trail toggle buttons below.
     let ownerInt = -1;
     if (typeof id === "string" && id.startsWith("u")) {
       const n = parseInt(id.substring(1), 10);
       if (Number.isFinite(n) && n >= 0 && n < 4) ownerInt = n;
     }
-    const checked = ownerInt >= 0 && uboatChartVisible[ownerInt] ? " checked" : "";
-    const chkHtml = ownerInt >= 0
-      ? `<input type="checkbox" class="uboatChartChk uboatChartChkHud" data-owner="${ownerInt}"${checked} title="Show this boat's nav-chart drawings">`
-      : "";
     // "Follow" button: toggles the camera-lock state for this boat.
     // Visual: stays highlighted while active so the user can see which
     // boat the camera is currently locked to.
     const followActive = (followingId === id) ? " active" : "";
     const followLabel  = (followingId === id) ? "Following" : "Follow";
+
+    // Per-boat View / Nav / Trail toggle buttons. View + Trail stay
+    // on/off; Nav is a three-state cycler (Off → Live → Full → Off)
+    // that controls when this boat's chart drawings appear:
+    //   • Off  – never shown
+    //   • Live – revealed progressively as playback reaches each
+    //            drawing's chart_add timestamp (replays the chart
+    //            build-up as the crew was drawing it)
+    //   • Full – every drawing visible immediately (the old "on"
+    //            behaviour)
+    const viewOn  = ownerInt < 0 || uboatViewVisible[ownerInt];
+    const trailOn = ownerInt < 0 || uboatTrailVisible[ownerInt];
+    const navMode = ownerInt >= 0 ? uboatChartVisible[ownerInt] : "off";
+    const navLabel = navMode === "off"  ? "Nav"
+                  : navMode === "live" ? "Nav: Live"
+                  : "Nav: Full";
+    const navActive = navMode !== "off" ? " active" : "";
+    const togglesHtml = ownerInt >= 0
+      ? `<div class="uTogglesRow">
+           <button class="uToggle${viewOn  ? " active" : ""}" data-tk="view"  data-owner="${ownerInt}" title="Show / hide this boat's mesh, label and depth pole">View</button>
+           <button class="uToggle${navActive}" data-tk="nav" data-owner="${ownerInt}" title="Cycle navigation chart visibility: Off → Live (draws appear as they were made) → Full (all drawings shown immediately)">${navLabel}</button>
+           <button class="uToggle${trailOn ? " active" : ""}" data-tk="trail" data-owner="${ownerInt}" title="Show / hide this boat's trail line">Trail</button>
+         </div>`
+      : "";
+
     btn.innerHTML =
-      `<div class="nameRow">${chkHtml}${imgHtml}<span style="color:${col.fill || "#fff"}">${nm}</span>` +
+      `<div class="nameRow">${imgHtml}<span style="color:${col.fill || "#fff"}">${nm}</span>` +
       `<button class="followBtn${followActive}" data-boat-id="${id}" title="Lock the camera to this boat (M-key independent)">${followLabel}</button>` +
       `</div>` +
-      `<div class="stats">--</div>`;
+      `<div class="stats">--</div>` +
+      togglesHtml;
     btn.addEventListener("click", (ev) => {
-      // Don't fire camera-focus when the click was on the checkbox
-      // or the Follow button — those have their own handlers.
+      // Don't fire camera-focus when the click was on the Follow button
+      // or one of the per-boat toggles — those have their own handlers.
       if (ev.target && ev.target.classList && (
-          ev.target.classList.contains("uboatChartChk") ||
+          ev.target.classList.contains("uToggle") ||
           ev.target.classList.contains("followBtn"))) return;
       if (!controls3d) return;
       const snap = entitySnapshot(id, currentT);
@@ -6412,18 +7274,50 @@ function rebuildUboatList() {
         markRender3DDirty();
       });
     }
-    // Wire the per-boat checkbox once the button is in the DOM.
-    const chk = btn.querySelector(".uboatChartChkHud");
+    // Wire the per-boat View / Nav / Trail toggle buttons.
+    btn.querySelectorAll(".uToggle").forEach(toggle => {
+      toggle.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const owner = parseInt(toggle.dataset.owner, 10);
+        const kind  = toggle.dataset.tk;
+        if (!(Number.isFinite(owner) && owner >= 0 && owner < 4)) return;
+        if (kind === "view") {
+          const active = !toggle.classList.contains("active");
+          toggle.classList.toggle("active", active);
+          uboatViewVisible[owner] = active;
+          _savePerBoatBools(UBOAT_VIEW_STORE, uboatViewVisible);
+        } else if (kind === "trail") {
+          const active = !toggle.classList.contains("active");
+          toggle.classList.toggle("active", active);
+          uboatTrailVisible[owner] = active;
+          _savePerBoatBools(UBOAT_TRAIL_STORE, uboatTrailVisible);
+        } else if (kind === "nav") {
+          // Cycle Off → Live → Full → Off through CHART_MODES.
+          const cur = uboatChartVisible[owner];
+          const i   = CHART_MODES.indexOf(cur);
+          const next = CHART_MODES[(i + 1) % CHART_MODES.length];
+          uboatChartVisible[owner] = next;
+          _savePerBoatBools(UBOAT_CHART_STORE, uboatChartVisible);
+          toggle.classList.toggle("active", next !== "off");
+          toggle.textContent =
+            next === "off"  ? "Nav"
+          : next === "live" ? "Nav: Live"
+          :                   "Nav: Full";
+          applyChartVisibility();
+        }
+        markRender3DDirty();
+      });
+    });
+    // Compatibility shim — older code path that wired the legend
+    // checkbox via .uboatChartChkHud no longer exists; the no-op below
+    // keeps the variable defined for any straggler reference.
+    const chk = null;
     if (chk) {
       chk.addEventListener("change", (ev) => {
         ev.stopPropagation();
         const owner = parseInt(chk.dataset.owner, 10);
         if (Number.isFinite(owner) && owner >= 0 && owner < uboatChartVisible.length) {
           uboatChartVisible[owner] = chk.checked;
-          // Keep the matching Legend checkbox in sync so both stay
-          // consistent when only one is interacted with.
-          const twin = document.querySelector(`#legendBody .uboatChartChk[data-owner="${owner}"]`);
-          if (twin) twin.checked = chk.checked;
           applyChartVisibility();
         }
       });
@@ -6465,14 +7359,122 @@ function updateUboatList() {
     }
     const snap = entitySnapshot(id, currentT);
     if (!snap) { statsEl.textContent = "--"; continue; }
-    const dep = snap.d != null ? fmtDepthM(snap.d) : "--";
+
+    // Mirror the floating-label data set: name (already in nameRow),
+    // speed + trend arrow with reverse coloring, depth + trend arrow
+    // with depth-warning coloring, under-keel, battery (if < 99 %),
+    // HP. Three-line layout uses the panel's full width.
+
+    // Speed + trend.
+    const sRich = trendArrowRich(id, currentT, 5, "s", 1.0);
+    const sArrow = sRich.arrow;
+    const reversing = isReversing(id, currentT);
+    const speedTxt = snap.s != null ? snap.s.toFixed(1) + " kn" : "--";
+    const speedColor = reversing ? "#ff5555" : "inherit";
+    const sArrowSpan = sArrow ? `<span style="color:${sRich.color || speedColor}">${sArrow}</span>` : "";
+
+    // Depth + trend. Note dArrow inversion: depth going UP (positive d
+    // increasing) means diving, render with ↓; depth going down means
+    // surfacing, render with ↑.
+    const dRich = trendArrowRich(id, currentT, 3, "d", 0.5);
+    const dArrow = dRich.arrow === "↑" ? "↓" : (dRich.arrow === "↓" ? "↑" : "");
+    const depthTxt = snap.d != null && snap.d > 2
+      ? "▼" + (snap.d > DEPTH_DISPLAY_CAP_M
+          ? DEPTH_DISPLAY_CAP_M + "+m"
+          : snap.d.toFixed(0) + "m")
+      : "▼--";
+    let depthColor = "inherit";
+    if (snap.uk != null && snap.uk <= 5)        depthColor = "#ff5555";
+    else if (snap.d != null && snap.d >= DEPTH_WARN_M)   depthColor = "#ff5555";
+    else if (snap.d != null && snap.d > SURFACE_DEPTH_M) depthColor = "#facc15";
+    const dArrowSpan = dArrow ? `<span style="color:${dRich.color || depthColor}">${dArrow}</span>` : "";
+
+    // Heading + under-keel.
+    const hdg = snap.h != null ? snap.h.toFixed(0).padStart(3, "0") + "°" : "--";
     const ukWarn = snap.uk != null && snap.uk < 15;
     const uk = snap.uk != null ? snap.uk.toFixed(0) + " m" : "--";
-    const hdg = snap.h != null ? snap.h.toFixed(0).padStart(3, "0") + "°" : "--";
-    const spd = snap.s != null ? snap.s.toFixed(1) + " kn" : "--";
-    statsEl.innerHTML =
-      `${dep} · ↧<span class="uk${ukWarn ? " warn" : ""}">${uk}</span>` +
-      `<br>${hdg} · ${spd}`;
+
+    // Battery — suppress at ≥ 99 % so a fully charged boat doesn't
+    // clutter the panel. Colour by remaining charge.
+    let batPart = "";
+    if (snap.bat != null && snap.bat < 0.99) {
+      const batPct = Math.round(snap.bat * 100);
+      let batColor = "inherit";
+      if      (snap.bat < 0.15) batColor = "#ff5555";
+      else if (snap.bat < 0.40) batColor = "#facc15";
+      batPart = `<span style="color:${batColor}">⚡${batPct}%</span>`;
+    }
+
+    // HP — only show when we can read it (host-side recording, boat
+    // not hidden due to spawn at 0).
+    let hpPart = "";
+    if (snap.hp != null
+        && !(data && data.recordedOnHost === false)
+        && !uboatHpHidden.has(id)) {
+      const maxH = uboatHpMax[id] || 1;
+      const hpPct = Math.round((maxH > 0 ? snap.hp / maxH : snap.hp) * 100);
+      let hpColor = "inherit";
+      if      (hpPct < 30) hpColor = "#ff5555";
+      else if (hpPct < 75) hpColor = "#facc15";
+      else                 hpColor = "#4ade80";
+      hpPart = `<span style="color:${hpColor}">♥${hpPct}%</span>`;
+    }
+
+    // Last echo-sounder ping (depth_ping event) for this boat —
+    // shows the most recent range reading the crew got off the
+    // gauge. Persists ("keep the last ping if nothing else") so once
+    // a ping has been logged it stays visible on the row until the
+    // next one supersedes it.
+    let pingPart = "";
+    if (data && Array.isArray(data.events)) {
+      let lastPing = null;
+      for (const ev of data.events) {
+        if (ev && ev.type === "depth_ping" && ev.id === id &&
+            ev.t != null && ev.t <= currentT &&
+            (!lastPing || ev.t > lastPing.t)) {
+          lastPing = ev;
+        }
+      }
+      if (lastPing && lastPing.range != null) {
+        const ageS = Math.max(0, currentT - lastPing.t);
+        const ageTxt = ageS < 60
+          ? ageS.toFixed(0) + "s ago"
+          : (ageS < 3600
+              ? Math.floor(ageS / 60) + "m " + (ageS % 60).toFixed(0).padStart(2, "0") + "s ago"
+              : Math.floor(ageS / 3600) + "h ago");
+        pingPart = `<span title="Last echo-sounder ping — ${ageTxt}">🔊${Math.round(lastPing.range)} m</span>`;
+      }
+    }
+
+    // Pitch / roll — recorded in 1.9.6+, omitted when ~0°. Show the
+    // real numeric values regardless of any tilt-amplification setting
+    // so the captain always sees the truth.
+    let tiltPart = "";
+    if (snap.pi != null || snap.ro != null) {
+      // Convention from the recorder: positive pitch = nose up, negative = nose down.
+      // Render as ↑/↓ with a degree value; roll as ⟲/⟳ if present.
+      const segs = [];
+      if (snap.pi != null) {
+        const arrow = snap.pi > 0 ? "↑" : (snap.pi < 0 ? "↓" : "·");
+        const abs   = Math.abs(snap.pi).toFixed(1);
+        segs.push(`<span title="pitch">${arrow}${abs}°</span>`);
+      }
+      if (snap.ro != null && Math.abs(snap.ro) > 0.5) {
+        const rollMark = snap.ro > 0 ? "⟳" : "⟲";
+        const abs = Math.abs(snap.ro).toFixed(1);
+        segs.push(`<span title="roll">${rollMark}${abs}°</span>`);
+      }
+      if (segs.length) tiltPart = segs.join(' <span class="lbl">·</span> ');
+    }
+
+    // Compose: line 1 speed + heading, line 2 depth + under-keel,
+    // line 3 battery + HP + tilt (only when at least one has data).
+    const line1 = `<span style="color:${speedColor}">${speedTxt}</span>${sArrowSpan} <span class="lbl">·</span> <span class="lbl">HDG</span> ${hdg}`;
+    const line2 = `<span style="color:${depthColor}">${depthTxt}</span>${dArrowSpan} <span class="lbl">·</span> ↧<span class="uk${ukWarn ? " warn" : ""}">${uk}</span>`;
+    const line3parts = [batPart, hpPart, tiltPart, pingPart].filter(s => s);
+    const line3 = line3parts.length ? "<br>" + line3parts.join(' <span class="lbl">·</span> ') : "";
+
+    statsEl.innerHTML = line1 + "<br>" + line2 + line3;
   }
 }
 
