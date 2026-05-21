@@ -21,10 +21,12 @@ A 3D replay viewer is included at [`web/missionmap.html`](web/missionmap.html) �
 **Discord auto-post (experimental):** there is an initial attempt at automatically posting the finished mission JSON (plus an optional summary, roster, and settings) to a Discord channel via webhook. It's off by default and configured entirely through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it. Treat it as a work in progress.
 
 **Notes:**
-- Multiplayer clients have limited visibility — recordings are most complete when run on the host.
+- **Host-only:** `StartRecording` early-returns when `W_NetworkManager.IsServer` is false, so client installs log `"Not host — recording skipped"` and stay inert. Drop the DLL on every peer if you want — only the host writes.
 - Recording only finalises when the mission ends cleanly (debrief).
+- 1.9.9+ recordings carry real ship draught + total height from `MerchantShipStats` / `WarshipStats`, so the viewer renders underwater hulls to scale (torpedo-depth vs keel lines up visually).
+- 1.9.11+ recordings emit `convoy_fleeing` events when the AI flips into evasion; the viewer shows a 💡 lights-on indicator on every merchant while the convoy is fleeing.
 
-**Install on:** host (full data); clients (sparse / often empty).
+**Install on:** host only (clients no-op silently).
 
 ---
 
@@ -100,6 +102,37 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 
 ---
 
+## LargerConvoyScaled (experimental)
+
+Sibling of the LargerConvoy multiplier family with a different design: instead of a single ×N factor, it uses **per-size targets** with a flat 100k-step goal progression and 25k of spawn headroom over every goal. Lobby size selector becomes a difficulty knob rather than a convoy-size knob:
+
+| Convoy size | Scaled spawn | Scaled goal | Scaled escorts (S / C / DD) | Total escorts |
+| --- | ---:| ---:| ---:| ---:|
+| Small      | 125,000 t | 100,000 t | 0 /  4 / 1 |  5 |
+| Normal     | 225,000 t | 200,000 t | 0 /  8 / 3 | 11 |
+| Large      | 325,000 t | 300,000 t | 4 / 10 / 3 | 17 |
+| Very Large | 425,000 t | 400,000 t | 7 / 11 / 4 | 22 |
+
+The mission tonnage goal is scaled by writing `VictoryConditionsTonnage.tonnageLimit` after `initConditions` (`SyncedFloat`, host-side write replicates to clients). Escort counts are absolute per-size targets so the screen feels comparable even when the rolled encounter has a different default.
+
+**Install on:** host only. **Do not load alongside any other `LargerConvoy*.dll`** — they all patch the same methods and would stack into nonsense.
+
+> Convoy/escort AI is not designed for inflated counts of this magnitude. Expect formation glitches and odd path-finding at the higher sizes — the game's AI doesn't get patched by this mod.
+
+---
+
+## ChartSync (experimental)
+
+Attempts to fix the multiplayer chart-drawing bug: in the vanilla game, **drawings made by a client never sync to the host or other clients** — the host draws and everyone sees, but the client draws and only that client sees.
+
+ChartSync postfixes `MapUndo.pushUndoDraw` (which fires exactly once per local draw, never on network-received re-instantiates) and routes the local spawn through `W_NetworkManager.instance.clientInstantiate(type, pos, rot)` so the host receives via the normal client-spawn pipeline and rebroadcasts via `spawnForAll`. The local-only copy is destroyed; the synced version arrives back within one network round-trip.
+
+**Known limitation:** `clientInstantiate` carries only position + rotation. Per-shape syncvars (line endpoints, circle radius, time-node timestamp) don't transfer through this path yet — those land at the host with prefab defaults. **Crosses (points) sync correctly across all peers; lines and circles may sync with default geometry** until a follow-up build also pushes those syncvars.
+
+**Install on:** every peer (host + all clients). Skipped on the host via `W_NetworkManager.IsServer` since the host's own drawings already broadcast correctly. Each broadcast logs `[ChartSync] CLIENT broadcast <type> at (X,Z)` so transmission can be verified from the BepInEx log.
+
+---
+
 ## Game Time API
 
 Exposes in-game state via a local HTTP API on port 1941 for use by webpages, OBS overlays, or other tools.
@@ -154,15 +187,16 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 
 ```
 .
-├── MissionMap.dll
-├── LogbookSeconds.dll
-├── LogbookExport.dll
-├── NetworkFix.dll
+├── ChartSync.dll
+├── GameTime_API.dll
 ├── LargerConvoy1_5x.dll
 ├── LargerConvoy2x.dll
-├── GameTime_API.dll
-├── TimeHUD.dll
+├── LargerConvoyScaled.dll
+├── LogbookExport.dll
+├── LogbookSeconds.dll
+├── MissionMap.dll
 ├── RadioAPI.dll
+├── TimeHUD.dll
 └── web/
     ├── missionmap.html
     └── toi.html
