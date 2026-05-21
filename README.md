@@ -121,6 +121,16 @@ The mission tonnage goal is scaled by writing `VictoryConditionsTonnage.tonnageL
 
 ---
 
+## TorpedoLoadout
+
+Sets the per-boat torpedo loadout to **14 steam (T1) and 14 electric (T2)**, applied to all 4 crews.
+
+A Harmony prefix on `Crew.resetTorpedoes(byte numT1, byte numT2)` rewrites the count arguments before the game applies them, catching every reset path (mission start, lobby UI reset button, default-loadout reload).
+
+**Install on:** host only.
+
+---
+
 ## ChartSync (experimental)
 
 Attempts to fix the multiplayer chart-drawing bug: in the vanilla game, **drawings made by a client never sync to the host or other clients** — the host draws and everyone sees, but the client draws and only that client sees.
@@ -197,6 +207,7 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 ├── MissionMap.dll
 ├── RadioAPI.dll
 ├── TimeHUD.dll
+├── TorpedoLoadout.dll
 └── web/
     ├── missionmap.html
     └── toi.html
