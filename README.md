@@ -131,18 +131,6 @@ A Harmony prefix on `Crew.resetTorpedoes(byte numT1, byte numT2)` rewrites the c
 
 ---
 
-## ChartSync (experimental)
-
-Attempts to fix the multiplayer chart-drawing bug: in the vanilla game, **drawings made by a client never sync to the host or other clients** — the host draws and everyone sees, but the client draws and only that client sees.
-
-ChartSync postfixes `MapUndo.pushUndoDraw` (which fires exactly once per local draw, never on network-received re-instantiates) and routes the local spawn through `W_NetworkManager.instance.clientInstantiate(type, pos, rot)` so the host receives via the normal client-spawn pipeline and rebroadcasts via `spawnForAll`. The local-only copy is destroyed; the synced version arrives back within one network round-trip.
-
-**Known limitation:** `clientInstantiate` carries only position + rotation. Per-shape syncvars (line endpoints, circle radius, time-node timestamp) don't transfer through this path yet — those land at the host with prefab defaults. **Crosses (points) sync correctly across all peers; lines and circles may sync with default geometry** until a follow-up build also pushes those syncvars.
-
-**Install on:** every peer (host + all clients). Skipped on the host via `W_NetworkManager.IsServer` since the host's own drawings already broadcast correctly. Each broadcast logs `[ChartSync] CLIENT broadcast <type> at (X,Z)` so transmission can be verified from the BepInEx log.
-
----
-
 ## Game Time API
 
 Exposes in-game state via a local HTTP API on port 1941 for use by webpages, OBS overlays, or other tools.
@@ -197,7 +185,6 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 
 ```
 .
-├── ChartSync.dll
 ├── GameTime_API.dll
 ├── LargerConvoy1_5x.dll
 ├── LargerConvoy2x.dll
