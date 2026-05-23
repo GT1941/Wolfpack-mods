@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23x</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23y</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -5642,20 +5642,34 @@ function meshForEntity(id, kind, snap) {
       // structural cue rather than dominating the silhouette.
       if (isBoid) {
         const keelL  = len * 0.7;
-        const keelW  = Math.max(0.3, beam * 0.04);
-        const keelH  = Math.min(stretchY(0.5), Math.max(stretchY(0.2), submerged * 0.06));
+        const keelW  = Math.max(0.6, beam * 0.08);
+        // ~1.0 m unstretched → 5 units at DEPTH_STRETCH=5. Big enough
+        // to spot from a top-down camera; in a recording with the
+        // depth-stretch disabled it's still ~1 m, clearly visible
+        // against the underwater hull.
+        const keelH  = Math.max(stretchY(1.0), 4);
         const keelGeo = new THREE.BoxGeometry(keelW, keelH, keelL);
         // Hangs straight down from the hull centerline. Box centre at
         // y = -submerged - keelH/2 puts its top face flush with the
-        // hull bottom (= recorded draught) and its bottom face just
-        // below — a small protrusion that's visible from below / the
-        // side without distorting the hull proportions.
+        // hull bottom (= recorded draught) and its bottom face below
+        // — a deliberately visible protrusion that lets the captain
+        // read the keel line from any angle. Real ship keels do
+        // protrude a short distance below the main hull baseline,
+        // so the rendering still tracks "keel = deepest steel"
+        // sufficiently for torpedo-depth comparison.
         keelGeo.translate(0, -submerged - keelH / 2, 0);
-        // Share the hull material so the per-frame sink-tint pass
-        // (which traverses the group and rewrites every child's
-        // material.color) carries the keel along — otherwise it'd
-        // stay alive-purple under a grey wreck.
-        group.add(new THREE.Mesh(keelGeo, mat));
+        // Distinct dark shade per kind so the keel reads as a
+        // structural feature rather than blending into the hull.
+        // Tagged with userData.isKeel so the per-frame sink-tint
+        // sweep skips it — the dark base colour already looks like
+        // "shadow / wreck" against the lighter hull, and keeping
+        // the keel from being lerped to grey preserves the visual
+        // marker even after the ship goes down.
+        const keelColor = (kind === "m") ? 0x3b0764 : 0x450a0a; // very dark purple / very dark red
+        const keelMat   = new THREE.MeshLambertMaterial({ color: keelColor });
+        const keelMesh  = new THREE.Mesh(keelGeo, keelMat);
+        keelMesh.userData.isKeel = true;
+        group.add(keelMesh);
       }
       // Deck plane sits at y = +hullFreeboard after the rotate +
       // translate above. Boxes go on top of it; box center y =
@@ -5958,6 +5972,10 @@ function update3D() {
       }
       mesh.traverse(child => {
         if (child && child.material && child.material.color) {
+          // Skip the keel — it has its own dark colour that already
+          // reads as "structural underbelly" and we don't want the
+          // sink-tint to lerp it to grey alongside the hull.
+          if (child.userData && child.userData.isKeel) return;
           child.material.color.copy(cTmp);
         }
       });
