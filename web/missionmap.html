@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23z</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23aa</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -5439,12 +5439,22 @@ function silhouetteForClass(cls, kind, len, beam) {
     deck(beam * 0.55, beam * 0.55, beam * 0.35,  0);                  // bridge midship
     deck(beam * 0.40, beam * 0.45, beam * 0.30, -halfL + beam * 0.5); // engine aft
   } else if (cls === "freighter") {
-    // Liberty / Empire: rounded bow, square stern, single midship structure.
-    // Bow at 0.65×beam for the same reason as the tanker — anything
-    // below 0.5×beam shrinks the rounded-bow arc and notches the hull.
+    // Liberty / Empire / Heavy Freighter: rounded bow, square stern,
+    // bridge midship with a tall funnel just aft of it. The two cargo
+    // masts (added in the mast block below) bracket this superstructure
+    // fore-and-aft to mirror the recognition-manual silhouette — a
+    // heavy freighter's most recognisable feature from the side.
     draw({ style: "rounded", len: beam * 0.65 },
          { style: "square",  len: 0 });
-    deck(beam * 0.55, beam * 0.55, beam * 0.40, -beam * 0.25);        // bridge slightly aft of midship
+    // Bridge midship: wide multi-deck block. Width raised to 0.70×beam
+    // so it visibly fills most of the hull width like the manual's
+    // bridge-deck plan; height bumped to 0.55×beam to read as a real
+    // multi-deck structure (was a single low block before).
+    deck(beam * 0.70, beam * 0.55, beam * 0.55, 0);
+    // Funnel: tall narrow column directly behind the bridge. ~1.3×
+    // the bridge height so it stands clearly above the superstructure
+    // like a real coal-burner stack.
+    deck(beam * 0.25, beam * 0.22, beam * 0.75, -beam * 0.45);
   } else if (cls === "trawler") {
     // Small auxiliary: short rounded hull, single aft deckhouse.
     draw({ style: "rounded", len: beam * 0.55 },
@@ -5727,25 +5737,29 @@ function meshForEntity(id, kind, snap) {
       // a trawler's. Six-segment cylinder is plenty at this size.
       if (hasMast) {
         const mastR  = Math.max(0.3, beam * 0.04);
-        const mastGeo = new THREE.CylinderGeometry(mastR, mastR, mastHeight, 6);
-        // Mast Z-position. After the geometry rotations the silhouette's
+        // Mast Z-positions. After the geometry rotations the silhouette's
         // bow direction (+X in shape space) maps to world +Z, so positive
         // mastZ pushes the mast forward toward the bow.
         //
-        // Most classes get the mast placed forward of midship (a typical
-        // foremast / king-post location ahead of the bridge), so a
-        // freighter visibly has "bridge aft, mast forward" rather than
-        // a single stick poking out of the bridge box. Passenger liners
-        // are the exception — their silhouette has a long midship
-        // superstructure block and a centre mast / funnel is the real
-        // visual cue, so they stay at z = 0.
-        const mastZ = (cls === "passenger") ? 0 : len * 0.3;
-        // Bottom of the cylinder sits on the deck; centre at
-        // deckY + mastHeight/2 = hullFreeboard + mastHeight/2.
-        mastGeo.translate(0, hullFreeboard + mastHeight / 2, mastZ);
-        const mast = new THREE.Mesh(mastGeo, mat);
-        mast.renderOrder = 50;
-        group.add(mast);
+        // Cargo freighters get fore + main masts bracketing the bridge —
+        // the recognition-manual silhouette has two tall masts at ~30 %
+        // of length from each end (kingpost / cargo-derrick rigs), and
+        // that's the freighter's clearest profile cue. Tankers, tribals
+        // and other classes keep a single forward mast; passenger liners
+        // get a single centre mast / funnel.
+        const mastZs = (cls === "freighter")
+          ? [ len * 0.30, -len * 0.25 ]
+          : (cls === "passenger") ? [ 0 ]
+          : [ len * 0.30 ];
+        for (const mastZ of mastZs) {
+          const mastGeo = new THREE.CylinderGeometry(mastR, mastR, mastHeight, 6);
+          // Bottom of the cylinder sits on the deck; centre at
+          // deckY + mastHeight/2 = hullFreeboard + mastHeight/2.
+          mastGeo.translate(0, hullFreeboard + mastHeight / 2, mastZ);
+          const mast = new THREE.Mesh(mastGeo, mat);
+          mast.renderOrder = 50;
+          group.add(mast);
+        }
       }
       mesh = group;
     }
