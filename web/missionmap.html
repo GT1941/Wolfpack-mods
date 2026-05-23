@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23y</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23z</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -5601,10 +5601,20 @@ function meshForEntity(id, kind, snap) {
     // +hullFreeboard.
     const mastHeight    = freeboardFull * 0.7;
     const hullFreeboard = freeboardFull - mastHeight;     // 30 % of freeboardFull
-    const hullHeight    = submerged + hullFreeboard;
 
-    const geo = new THREE.ExtrudeGeometry(sil.shape, {
-      depth: hullHeight,
+    // ── Hull: above water + below water (tapered) ────────────────────
+    // Above-water is a flat-sided extrusion of the silhouette — decks
+    // and topsides on real ships ARE basically prismatic. Below-water
+    // is a separate extrusion whose bottom ring is scaled toward the
+    // centerline so the hull "rounds" into the keel instead of leaving
+    // a flat slab at the recorded draught. The two stack at y=0 (the
+    // waterline) so the join is exactly where the waterline lives.
+    const mat = new THREE.MeshLambertMaterial({ color: kind === "m" ? 0xc084fc : 0xef4444 });
+
+    // Above-water: silhouette extruded by hullFreeboard, no taper.
+    // Sits at y ∈ [0, hullFreeboard] after the rotation.
+    const aboveGeo = new THREE.ExtrudeGeometry(sil.shape, {
+      depth: hullFreeboard,
       bevelEnabled: false,
       curveSegments: 16,
     });
@@ -5612,13 +5622,44 @@ function meshForEntity(id, kind, snap) {
     // and the silhouette to lie in the X-Z plane. Rotate around X by
     // -π/2 so the extrusion axis becomes +Y, then around Y by -π/2 so
     // the bow (+X in shape space) points to +Z (north by default).
-    geo.rotateX(-Math.PI / 2);
-    geo.rotateY(-Math.PI / 2);
-    // Shift so the waterline (y=0) sits between the submerged keel
-    // (y = -submerged) and the deck (y = +freeboard). Lets torpedo
-    // depths line up with the actual underwater hull they'd strike.
-    geo.translate(0, -submerged, 0);
-    const mat = new THREE.MeshLambertMaterial({ color: kind === "m" ? 0xc084fc : 0xef4444 });
+    aboveGeo.rotateX(-Math.PI / 2);
+    aboveGeo.rotateY(-Math.PI / 2);
+
+    // Below-water: silhouette extruded by submerged, with the bottom
+    // ring scaled to ~45% of full beam so the hull tapers into the
+    // keel. ExtrudeGeometry has no intermediate vertex rings (no
+    // `steps` set), so scaling the bottom-cap vertices tilts every
+    // side wall inward as a continuous slant from waterline to keel
+    // — exactly the underbody curve we want without rebuilding the
+    // geometry from scratch.
+    const belowGeo = new THREE.ExtrudeGeometry(sil.shape, {
+      depth: submerged,
+      bevelEnabled: false,
+      curveSegments: 16,
+    });
+    belowGeo.rotateX(-Math.PI / 2);
+    belowGeo.rotateY(-Math.PI / 2);
+    belowGeo.translate(0, -submerged, 0);
+    // Taper the bottom cap (everything at y ≈ -submerged) toward
+    // the centerline. tipScale = fraction of the silhouette beam at
+    // the keel line; 0.45 gives a clear "bilge curve" without making
+    // the keel section unrealistically narrow.
+    {
+      const tipScale = 0.45;
+      const pos = belowGeo.attributes.position;
+      // Tolerance comparing against -submerged: ExtrudeGeometry's bottom
+      // cap vertices land exactly there, but we leave a small epsilon.
+      const tol = 0.001;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        if (y < -submerged + tol) {
+          pos.setX(i, pos.getX(i) * tipScale);
+          pos.setZ(i, pos.getZ(i) * tipScale);
+        }
+      }
+      pos.needsUpdate = true;
+      belowGeo.computeVertexNormals();
+    }
 
     // If the silhouette carries superstructure boxes, build a Group so
     // we can compose hull + deck features. Otherwise emit a plain Mesh
@@ -5629,47 +5670,35 @@ function meshForEntity(id, kind, snap) {
     const isBoid   = (kind === "m" || kind === "e");
     if (hasSuper || hasMast || isBoid) {
       const group = new THREE.Group();
-      group.add(new THREE.Mesh(geo, mat));
+      group.add(new THREE.Mesh(aboveGeo, mat));
+      group.add(new THREE.Mesh(belowGeo, mat));
       // ── Keel ────────────────────────────────────────────────────
       // Thin centerline spine running ~70 % of the hull length,
-      // hanging just below the main hull baseline. Magnetic torpedoes
+      // hanging just below the tapered hull bottom. Magnetic torpedoes
       // set to "depth ≈ ship draught" detonate right under the keel;
       // having a visible keel line makes that aim-versus-depth check
-      // obvious from any camera angle (and lines up with the in-game
-      // hull, where the keel is the deepest point a torpedo can hit).
-      // Keel height is capped at ~0.5 m unstretched (× DEPTH_STRETCH
-      // along Y like the rest of the depth axis) so it stays a thin
-      // structural cue rather than dominating the silhouette.
+      // obvious from any camera angle. Width is tied to the bottom
+      // ring of the tapered hull (beam × tipScale × small fraction)
+      // so the keel feels like a continuation of the bilge curve
+      // rather than a bolted-on box. Same hull material so it tints
+      // along with the rest of the ship on sink, and so it visually
+      // reads as part of the hull (the user explicitly asked for the
+      // keel colour to match).
       if (isBoid) {
         const keelL  = len * 0.7;
-        const keelW  = Math.max(0.6, beam * 0.08);
+        const keelW  = Math.max(0.6, beam * 0.10);
         // ~1.0 m unstretched → 5 units at DEPTH_STRETCH=5. Big enough
         // to spot from a top-down camera; in a recording with the
         // depth-stretch disabled it's still ~1 m, clearly visible
         // against the underwater hull.
         const keelH  = Math.max(stretchY(1.0), 4);
         const keelGeo = new THREE.BoxGeometry(keelW, keelH, keelL);
-        // Hangs straight down from the hull centerline. Box centre at
-        // y = -submerged - keelH/2 puts its top face flush with the
-        // hull bottom (= recorded draught) and its bottom face below
-        // — a deliberately visible protrusion that lets the captain
-        // read the keel line from any angle. Real ship keels do
-        // protrude a short distance below the main hull baseline,
-        // so the rendering still tracks "keel = deepest steel"
-        // sufficiently for torpedo-depth comparison.
+        // Box centre at y = -submerged - keelH/2 puts its top face
+        // flush with the tapered hull's bottom (= recorded draught)
+        // and its bottom face just below — a small visible protrusion
+        // that lets the captain read the keel line from any angle.
         keelGeo.translate(0, -submerged - keelH / 2, 0);
-        // Distinct dark shade per kind so the keel reads as a
-        // structural feature rather than blending into the hull.
-        // Tagged with userData.isKeel so the per-frame sink-tint
-        // sweep skips it — the dark base colour already looks like
-        // "shadow / wreck" against the lighter hull, and keeping
-        // the keel from being lerped to grey preserves the visual
-        // marker even after the ship goes down.
-        const keelColor = (kind === "m") ? 0x3b0764 : 0x450a0a; // very dark purple / very dark red
-        const keelMat   = new THREE.MeshLambertMaterial({ color: keelColor });
-        const keelMesh  = new THREE.Mesh(keelGeo, keelMat);
-        keelMesh.userData.isKeel = true;
-        group.add(keelMesh);
+        group.add(new THREE.Mesh(keelGeo, mat));
       }
       // Deck plane sits at y = +hullFreeboard after the rotate +
       // translate above. Boxes go on top of it; box center y =
@@ -5719,9 +5748,11 @@ function meshForEntity(id, kind, snap) {
         group.add(mast);
       }
       mesh = group;
-    } else {
-      mesh = new THREE.Mesh(geo, mat);
     }
+    // No `else` branch — isBoid is always true inside the "m" || "e"
+    // arm, so the group path always runs and the old single-mesh
+    // fallback (which referenced a now-removed monolithic `geo`) is
+    // unreachable.
   } else if (kind === "t") {
     // Torpedo: a proper fish silhouette — rounded nose, cylindrical body,
     // tapered tail, and a little 4-blade propeller. Built as a Group so
@@ -5972,10 +6003,6 @@ function update3D() {
       }
       mesh.traverse(child => {
         if (child && child.material && child.material.color) {
-          // Skip the keel — it has its own dark colour that already
-          // reads as "structural underbelly" and we don't want the
-          // sink-tint to lerp it to grey alongside the hull.
-          if (child.userData && child.userData.isKeel) return;
           child.material.color.copy(cTmp);
         }
       });
