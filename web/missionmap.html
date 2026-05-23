@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23u</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23v</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -810,6 +810,14 @@ let tracks = {}; // id -> {kind, samples: [{t,x,z,h,d,s}], lastSample}
 // construction can pull true length/beam instead of a kind-typical
 // default. Populated in loadData; reset on every fresh recording.
 let boidMetaById = new Map();
+// boidId -> the ship_sunk event (real or synthesised) that matches this
+// boid's track end, populated in loadData by position + name + time
+// proximity. Used by sinkAnimState / ensureSunkBoidLabel so the sink
+// animation starts at the actual ship_sunk moment instead of "last
+// sample + lag". Boids sample every 15s, so the old lag-based timing
+// could trigger the wreck icon up to a full sample interval before the
+// killing torpedo actually arrived in the viewer.
+let sunkEventByBoidId = new Map();
 let torpedoLaunchT = {}; // id -> t at which the torpedo was actually fired
 let gunFireById = {};    // shell-id -> {t,x,z}     (deck-gun fire events)
 let gunLandById = {};    // shell-id -> {t,x,z,hit} (deck-gun impact events)
@@ -1202,6 +1210,47 @@ function loadData(json) {
   }
 
   totalT = data.samples.length ? data.samples[data.samples.length - 1].t : 0;
+
+  // ── Bind each sinking boid to its ship_sunk event ──────────────────
+  // Walk every merchant / escort track whose final sample is well before
+  // the end of the recording (the same "this looks like a sinking"
+  // discriminator sinkAnimState already uses) and find the ship_sunk
+  // event that most plausibly belongs to it. Match by:
+  //   1. Position (≤200m from boid's last sample)
+  //   2. Time (event within [-30s, +60s] of last sample)
+  //   3. Name match (boost; not required)
+  // Score = distance + |time delta|, with a +100m penalty when the name
+  // doesn't match — that's enough for the right event to win when two
+  // ships die near each other in the same convoy strike.
+  // The synthesised pass earlier already filled in ship_sunk events for
+  // boids the W_Cargoship.die hook missed, so almost every legitimate
+  // kill ends up bound here.
+  sunkEventByBoidId = new Map();
+  for (const id in tracks) {
+    const tr = tracks[id];
+    if (tr.kind !== "m" && tr.kind !== "e") continue;
+    if (!tr.samples || tr.samples.length < 2) continue;
+    const last  = tr.samples[tr.samples.length - 1];
+    const first = tr.samples[0];
+    if (last.t - first.t < 1) continue;
+    if (last.t >= totalT - SUNK_TRACK_GRACE_S) continue;
+    const name = (last.n && String(last.n).trim()) || "";
+    let best = null, bestScore = Infinity;
+    for (const ev of data.events) {
+      if (ev.type !== "ship_sunk") continue;
+      if (typeof ev.x !== "number" || typeof ev.z !== "number") continue;
+      if (ev.t < last.t - 30) continue;
+      if (ev.t > last.t + 60) continue;
+      const dist = Math.hypot(ev.x - last.x, ev.z - last.z);
+      if (dist > 200) continue;
+      const evName = (ev.name && String(ev.name).trim()) || "";
+      let score = dist + Math.abs(ev.t - last.t);
+      if (!(evName && name && evName === name)) score += 100;
+      if (score < bestScore) { bestScore = score; best = ev; }
+    }
+    if (best) sunkEventByBoidId.set(id, best);
+  }
+
   // Start at t=0 — already shifted to be the first u-boat sample. The old
   // 20-s skip is unnecessary now that the timeline begins at spawn.
   currentT = 0;
@@ -5047,12 +5096,15 @@ function ensureSunkBoidLabel(id, tr) {
   // Track must end before recording does, otherwise the boid is just
   // alive at the end of playback — not sunk.
   if (last.t >= totalT - SUNK_TRACK_GRACE_S) return;
-  // Don't show the marker until playback has reached the sinking.
-  // Also hold the marker back while the descent animation is playing —
-  // the parked label looks wrong floating over a hull that's still
-  // visibly there. Once SINK_ANIM_S has elapsed past last.t the hull
-  // has faded out and the label can take its place.
-  if (currentT < last.t + SINK_ANIM_S) {
+  // Wait for the boid's bound ship_sunk event time before showing the
+  // parked "sunk here" label — same anchor sinkAnimState uses, so the
+  // label appears after the descent finishes rather than at last.t +
+  // SINK_ANIM_S (which could be well before the killing torpedo
+  // actually arrived for a boid whose last sample was ~14s early).
+  const sunkEv = sunkEventByBoidId.get(id);
+  if (!sunkEv) return;
+  const lag = sunkEv._synthetic ? 8 : 0;
+  if (currentT < sunkEv.t + lag + SINK_ANIM_S) {
     const existing = sunkBoidLabels.get(id);
     if (existing) existing.visible = false;
     return;
@@ -5703,32 +5755,24 @@ function sinkAnimState(id, tr, t) {
   const samples = tr.samples;
   if (!samples.length) return null;
   const last = samples[samples.length - 1];
-  const first = samples[0];
 
-  // Track must end before the recording does to qualify as a sinking.
-  if (last.t >= totalT - SUNK_TRACK_GRACE_S) return null;
+  // The animation is anchored to the *actual* ship_sunk event time
+  // bound to this boid at load-time, not to last-sample + lag. Boids
+  // sample every 15s, so a torpedo can arrive up to ~14s after the
+  // boid's last sample landed — keying off last.t made the wreck icon
+  // appear while the ship was still visibly alive and the torpedo was
+  // still tracking inbound. If no event is bound (track ended for
+  // non-death reasons, e.g. mod-side trim), no animation plays.
+  const sunkEv = sunkEventByBoidId.get(id);
+  if (!sunkEv) return null;
 
-  // Mod-side trim filter. TorpedoRange (and LargerConvoy*) Destroy
-  // excess boids right at mission start before the spawner's first
-  // post-spawn boid tick. Those boids appear in the t=0 snapshot
-  // but never again — exactly ONE sample, or first.t == last.t.
-  // Without this filter every trimmed merchant flipped into the
-  // sink animation the moment playback advanced past t=0, painting
-  // a wreck-grey formation before any torpedoes were even fired.
-  // A real kill always spans at least one boid interval (~15 s)
-  // before death, so requiring last.t > first.t + 1 s is a clean
-  // discriminator.
-  if (samples.length < 2)         return null;
-  if (last.t - first.t < 1)       return null;
-
-  // Defer the descent start by roughly half a boid interval. The
-  // actual death moment lies somewhere between this sample and the
-  // next-that-never-came; lining the animation up with last.t fires
-  // it visibly BEFORE the torpedo finishes its run in the viewer.
-  // 8 s lag puts the start near the most-likely death moment for a
-  // boidInterval=15 s recording.
-  const SINK_ANIM_START_LAG_S = 8;
-  const dt = t - (last.t + SINK_ANIM_START_LAG_S);
+  // Synth events were created at last sample time (the true death
+  // moment is unknown — somewhere between this sample and the next-
+  // that-never-came). Defer their descent start by half a boid
+  // interval so the wreck doesn't slip under a still-running torpedo.
+  // Real die-hook events fire at the actual death moment; no lag.
+  const lag = sunkEv._synthetic ? 8 : 0;
+  const dt = t - (sunkEv.t + lag);
   if (dt < 0) return null;                // hasn't sunk yet at playT
   // Resolve final wreck depth from bathymetry; fall back to a sensible
   // visible depth when there's no nearby reading.
@@ -5767,17 +5811,35 @@ function update3D() {
     if (currentT > lastSampleTimeFor(id)) {
       sinkState = sinkAnimState(id, tr, currentT);
       if (!sinkState) {
-        // Mid-recording: track ended early and not a sinking → hide
-        // everything per-id. The continue below skips the rest of
-        // the render loop for this entity; without the explicit
-        // hide() calls the boid's state icons (alert / fire / flee /
-        // flood / etc.) stay frozen at their last-rendered visibility
-        // and leave a trail of orphan droplets / flames over the
-        // wreck. End-of-playback case (within 0.5 s of totalT) keeps
-        // the entity parked at its last sample, no hide.
-        if (currentT < totalT - 0.5) {
+        // No active sink animation. Two sub-cases:
+        //
+        //  (a) The boid IS going to sink, but playback hasn't reached
+        //      its bound ship_sunk event yet. This happens because
+        //      boids sample every 15s — last sample may be ~14s
+        //      before the actual death. We keep the mesh parked at
+        //      its last sample position so it stays visibly alive
+        //      until the torpedo's hit moment, then sinkAnimState
+        //      takes over at sunkEv.t. Without this, the mesh would
+        //      vanish at last.t and pop back when the sink animation
+        //      starts — the user-visible "blink".
+        //
+        //  (b) Track ended for non-death reasons (mod-side trim, etc.)
+        //      → hide auxiliaries + skip mesh. End-of-playback case
+        //      (within 0.5s of totalT) keeps the entity parked at its
+        //      last sample so the final frame shows where everyone
+        //      ended up.
+        const upcomingSunkEv = sunkEventByBoidId.get(id);
+        const upcomingLag    = (upcomingSunkEv && upcomingSunkEv._synthetic) ? 8 : 0;
+        const upcomingStart  = upcomingSunkEv ? upcomingSunkEv.t + upcomingLag : Infinity;
+        if (currentT < upcomingStart) {
+          // Case (a): fall through to render the mesh at its parked
+          // last-sample position. sinkState stays null → normal
+          // colour, auxiliaries can still update from the last sample
+          // (they read tr.samples[len-1] via entitySnapshot clamp).
+        } else if (currentT < totalT - 0.5) {
+          // Case (b): non-death track end → hide and skip.
           hideBoidAuxiliaries(id);
-          hideWreckIcon(id);   // covers scrub-back / 8 s lag / late grace
+          hideWreckIcon(id);
           continue;
         }
       }
@@ -5880,6 +5942,12 @@ function update3D() {
       } else {
         showWreckIcon(id, mesh.position);
       }
+    } else {
+      // No active sink animation (boid alive, parked-alive case, or
+      // scrubbed back past the sinking moment). Make sure any wreck
+      // icon left from a prior frame is hidden, otherwise it floats
+      // over a living hull.
+      hideWreckIcon(id);
     }
     // Per-uboat text label (name + speed + depth + battery + under-keel)
     if (tr.kind === "u") {
