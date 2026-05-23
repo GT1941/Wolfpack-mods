@@ -21,10 +21,10 @@ A 3D replay viewer is included at [`web/missionmap.html`](web/missionmap.html) �
 **Discord auto-post (experimental):** there is an initial attempt at automatically posting the finished mission JSON (plus an optional summary, roster, and settings) to a Discord channel via webhook. It's off by default and configured entirely through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it. Treat it as a work in progress.
 
 **Notes:**
-- **Host-only:** `StartRecording` early-returns when `W_NetworkManager.IsServer` is false, so client installs log `"Not host — recording skipped"` and stay inert. Drop the DLL on every peer if you want — only the host writes.
-- Recording only finalises when the mission ends cleanly (debrief).
-- 1.9.9+ recordings carry real ship draught + total height from `MerchantShipStats` / `WarshipStats`, so the viewer renders underwater hulls to scale (torpedo-depth vs keel lines up visually).
-- 1.9.11+ recordings emit `convoy_fleeing` events when the AI flips into evasion; the viewer shows a 💡 lights-on indicator on every merchant while the convoy is fleeing.
+- **Host-only.** Only the host writes the recording. Dropping the DLL on every peer is harmless — non-host installs stay inert.
+- Recording finalises when the mission ends cleanly (debrief).
+- Ship hulls in the viewer are drawn to their real draught and height so torpedo running depths visually line up with the keel they would strike.
+- A "lights on" indicator appears over every merchant while the convoy is fleeing, matching what the AI is actually doing in the moment.
 
 **Install on:** host only (clients no-op silently).
 
@@ -45,7 +45,7 @@ Enhancements to the in‑game C‑menu logbook:
    ```
 4. **Friendly-fire reporting** — when a torpedo strikes another U-boat the game logs only a vague "premature" line; this rewrites it into a proper friendly-fire hit/sink report (firer, victim, tube, impact angle), and notes the loss on both boats if the hit is fatal.
 
-`logBook` is per‑peer (not synced), so each peer maintains its own copy. The mod runs locally on every peer that sees the firing/exploding torpedo — each captain gets the enrichment on their own boat regardless of who is hosting. Idempotency guards stop double‑appends if the field ever does sync. Two players running the mod simultaneously is fine.
+Each player sees their own logbook locally — the mod doesn't change anything on the wire and is safe to run alongside other players with or without the same mod installed.
 
 **Install on:** any client.
 
@@ -53,11 +53,11 @@ Enhancements to the in‑game C‑menu logbook:
 
 ## LargerConvoy
 
-Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying its outputs (merchants, armed merchants, carriers, sloops, corvettes, destroyers, merchant tonnage goal).
+Scales convoy size by a fixed multiplier — more merchants, armed merchants, carriers, sloops, corvettes, and destroyers spawn in every encounter.
 
 > **Note:** The mission's success/scoring tonnage goal is **not** scaled — only the spawned convoy is. So with ×2 you'll see roughly twice as many targets, but the threshold to "succeed" the mission stays the same as the unmodded value, effectively making missions easier (more targets to chew through for the same objective).
 
-> **Note:** Convoy and escort AI is not designed for these inflated counts. Expect odd behaviour — formation glitches, escorts overlapping or piling up, weird pathing, unusual detection/fleeing responses. The game's AI is balanced around the unmodded convoy size, and the mod doesn't touch any of that logic.
+> **Note:** Convoy and escort AI is not designed for these inflated counts. Expect odd behaviour — formation glitches, escorts overlapping or piling up, weird pathing, unusual detection/fleeing responses. The game's AI is balanced around the unmodded convoy size; this mod just scales the spawn counts.
 
 **Install on:** host only.
 
@@ -68,7 +68,7 @@ Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying i
 | `LargerConvoy1_5x.dll` | ×1.5 | Gentle bump |
 | `LargerConvoy2x.dll` | ×2 | Default |
 
-> **Important:** Load only **one** LargerConvoy DLL at a time. All variants patch the same method (`ConvoySpawner.randomEncounter`), so loading two would **stack** the multipliers — e.g. `1_5x` + `2x` would give ×3, not ×2. When switching variants, delete the old DLL from `BepInEx/plugins/` before dropping in the new one.
+> **Important:** Load only **one** LargerConvoy DLL at a time. Loading two would stack the multipliers — e.g. `1_5x` + `2x` would give ×3, not ×2. When switching variants, delete the old DLL from `BepInEx/plugins/` before dropping in the new one.
 
 ---
 
@@ -83,19 +83,17 @@ Sibling of the LargerConvoy multiplier family with a different design: instead o
 | Large      | 325,000 t | 300,000 t | 4 / 10 / 3 | 17 |
 | Very Large | 425,000 t | 400,000 t | 7 / 11 / 4 | 22 |
 
-The mission tonnage goal is scaled by writing `VictoryConditionsTonnage.tonnageLimit` after `initConditions` (`SyncedFloat`, host-side write replicates to clients). Escort counts are absolute per-size targets so the screen feels comparable even when the rolled encounter has a different default.
+Unlike the multiplier variants, this one also raises the mission's tonnage goal — the threshold needed to "succeed" — so the relative challenge stays roughly constant rather than collapsing under the extra targets. The host's setting propagates to every peer in the lobby. Escort counts are absolute per-size targets so the screen feels comparable even when the rolled encounter has a different default.
 
-**Install on:** host only. **Do not load alongside any other `LargerConvoy*.dll`** — they all patch the same methods and would stack into nonsense.
+**Install on:** host only. **Do not load alongside any other `LargerConvoy*.dll`** — they would interfere with each other.
 
-> Convoy/escort AI is not designed for inflated counts of this magnitude. Expect formation glitches and odd path-finding at the higher sizes — the game's AI doesn't get patched by this mod.
+> Convoy/escort AI is not designed for inflated counts of this magnitude. Expect formation glitches and odd path-finding at the higher sizes.
 
 ---
 
 ## TorpedoLoadout
 
-Sets the per-boat torpedo loadout to **14 steam (T1) and 14 electric (T2)**, applied to all 4 crews.
-
-A Harmony prefix on `Crew.resetTorpedoes(byte numT1, byte numT2)` rewrites the count arguments before the game applies them, catching every reset path (mission start, lobby UI reset button, default-loadout reload).
+Sets the per-boat torpedo loadout to **14 steam (T1) and 14 electric (T2)**, applied to all 4 crews. The override catches every reload path — mission start, the lobby's reset button, default-loadout reload — so the count stays at 14/14 regardless of how the game tries to reset it.
 
 **Install on:** host only.
 
@@ -121,12 +119,12 @@ A sample webpage that shows a countdown from current in-game time to a chosen im
 
 Two small features in one mod:
 
-1. **In-game clock HUD** — a small label in the top-right of the screen showing the current in-game clock (`HH:MM:SS` by default; seconds optional). Drawn over the game UI so it sits on top of every screen without fighting Wolfpack's canvas hierarchy.
-2. **Chat timestamps** — every line shown via `W_InGameChat.showMessage`/`showTextMessage` gets a `[HH:MM]` prefix using the current in-game time. Each viewer prepends their own local stamp; `azureTime` is server-synced, so timestamps agree across peers within ~1 s.
+1. **In-game clock HUD** — a small label in the top-right of the screen showing the current in-game clock (`HH:MM:SS` by default; seconds optional). Drawn over the game UI so it sits on top of every screen.
+2. **Chat timestamps** — every chat line gets an `HH:MM:SS - ` prefix in front of the username, e.g. `08:13:24 - U-96: target sighted`. When the host has the mod installed, the timestamp is added once at the server and every peer sees it regardless of whether they have the mod themselves. Server time is the same on every peer, so the stamps line up across the lobby.
 
-Both features are individually togglable in BepInEx config (`HUD.Enabled`, `Chat.Enabled`), with extra knobs for font size, seconds vs. minutes precision, etc.
+Both features are individually togglable in the mod's config file, with knobs for font size, whether to show seconds on the HUD, etc.
 
-**Install on:** any client.
+**Install on:** any client. Install on the host to add chat stamps everyone sees.
 
 ---
 
@@ -155,8 +153,8 @@ want to try it, but expect drift against current game versions.
   `BepInEx/` after each mission (torpedo launches / hits, sinkings,
   first detection, summary totals). Superseded in practice by the
   much richer MissionMap JSON + viewer.
-- **`archive/NetworkFix.dll`** — bumped `W_NetworkManager.numIterations`
-  to 3 to reduce rubber-banding / desync. Recent game patches appear
+- **`archive/NetworkFix.dll`** — bumped the multiplayer network update
+  rate to reduce rubber-banding and desync. Recent game patches appear
   to have addressed most of what it was working around.
 
 ---
