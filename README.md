@@ -51,36 +51,6 @@ Enhancements to the in‑game C‑menu logbook:
 
 ---
 
-## LogbookExport
-
-Writes a patrol log file to `BepInEx/` after each mission, summarising what happened.
-
-**Patrol log contents:**
-- Torpedo launches (with tube number), hits (with tube number), premature detonations
-- Ship sinkings with type and tonnage
-- First detection (visual, hydrophone, or inferred from convoy fleeing)
-- U-boat loss
-- Summary: torpedoes fired/hit/missed, total tonnage, detected yes/no
-
-**Notes:**
-- One patrol log file per boat per session, named e.g. `PatrolLog_U-96_2026-01-01_20-00-00.txt`
-- Timestamps use in-game time (HH:MM:SS)
-- **Host only:** if you join someone else's session, the mod stays inert and does not write a file (clients lack visibility into most events).
-
-**Install on:** host (writes the file). Loading it on clients is harmless — it just does nothing.
-
----
-
-## NetworkFix
-
-Sets `W_NetworkManager.numIterations = 3` (up from the default 1) to reduce rubber-banding and desync in multiplayer.
-
-> **May be redundant in current builds.** Recent game patches included AI ship maneuverability / movement fixes that appear to address some of what this mod was originally working around. It hasn't been A/B tested against the latest version, so it's left available — using it shouldn't hurt either way, but you may not need it.
-
-**Install on:** host (required if used); clients (optional).
-
----
-
 ## LargerConvoy
 
 Scales convoy size by patching `ConvoySpawner.randomEncounter` and multiplying its outputs (merchants, armed merchants, carriers, sloops, corvettes, destroyers, merchant tonnage goal).
@@ -175,6 +145,22 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 
 ---
 
+## Archived mods
+
+Past mods kept under `archive/` for historical reference. Not actively
+maintained — pull a DLL out and drop it into `BepInEx/plugins/` if you
+want to try it, but expect drift against current game versions.
+
+- **`archive/LogbookExport.dll`** — wrote a patrol-log summary file to
+  `BepInEx/` after each mission (torpedo launches / hits, sinkings,
+  first detection, summary totals). Superseded in practice by the
+  much richer MissionMap JSON + viewer.
+- **`archive/NetworkFix.dll`** — bumped `W_NetworkManager.numIterations`
+  to 3 to reduce rubber-banding / desync. Recent game patches appear
+  to have addressed most of what it was working around.
+
+---
+
 ## Installation
 
 1. Install BepInEx 6 IL2CPP into the Wolfpack game folder. Use a recent **bleeding-edge** build (the `win-x64` IL2CPP artifact) from the official build server: <https://builds.bepinex.dev/projects/bepinex_be>
@@ -189,12 +175,14 @@ A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fal
 ├── LargerConvoy1_5x.dll
 ├── LargerConvoy2x.dll
 ├── LargerConvoyScaled.dll
-├── LogbookExport.dll
 ├── LogbookSeconds.dll
 ├── MissionMap.dll
 ├── RadioAPI.dll
 ├── TimeHUD.dll
 ├── TorpedoLoadout.dll
+├── archive/
+│   ├── LogbookExport.dll
+│   └── NetworkFix.dll
 └── web/
     ├── missionmap.html
     └── toi.html
@@ -206,3 +194,16 @@ Source is not currently public.
 
 - Wolfpack pre-beta — Steam `testing` or `beta-beta` branch (Unity 2020.3, IL2CPP)
 - BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2 (the version these mods were built and tested against). Newer bleeding-edge builds from <https://builds.bepinex.dev/projects/bepinex_be> generally work too.
+
+## Licence
+
+The plugin DLLs, web viewer, and documentation in this repository are
+**All Rights Reserved** — see [`LICENSE.txt`](LICENSE.txt) for the full
+text. They are not open source; redistribution or modification requires
+the copyright holder's written permission.
+
+The linked dependencies retain their original licences, also reproduced
+in `LICENSE.txt`:
+
+- **BepInEx** — GNU Lesser General Public License, version 2.1
+- **HarmonyX** (the Harmony2 fork bundled with BepInEx 6) — MIT
