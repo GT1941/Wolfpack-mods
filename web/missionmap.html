@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23v</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23w</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -1248,7 +1248,26 @@ function loadData(json) {
       if (!(evName && name && evName === name)) score += 100;
       if (score < bestScore) { bestScore = score; best = ev; }
     }
-    if (best) sunkEventByBoidId.set(id, best);
+    if (best) {
+      sunkEventByBoidId.set(id, best);
+    } else {
+      // Fallback: track ended well before recording end and no
+      // ship_sunk event matched. Could be:
+      //  - W_Cargoship.die didn't fire for this ship class
+      //  - DamageManager.die postfix also missed it
+      //  - synthesizeSunkEvents() skipped it (last sample speed > 4kn
+      //    means "still going fast → probably not a kill")
+      // In all these cases the old viewer (pre-binding) still showed
+      // the sink animation by keying off last.t directly. Preserve
+      // that behaviour with a synthetic anchor at last.t, marked so
+      // sinkAnimState still applies the half-interval lag — without
+      // this every such ship just freezes at its last sample, which
+      // is what the user reported in build 'v.
+      sunkEventByBoidId.set(id, {
+        t: last.t, x: last.x, z: last.z, name,
+        _synthetic: true, _trackEndFallback: true,
+      });
+    }
   }
 
   // Start at t=0 — already shifted to be the first u-boat sample. The old
