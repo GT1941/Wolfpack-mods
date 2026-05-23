@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23w</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23x</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -5622,12 +5622,41 @@ function meshForEntity(id, kind, snap) {
 
     // If the silhouette carries superstructure boxes, build a Group so
     // we can compose hull + deck features. Otherwise emit a plain Mesh
-    // (cheaper, same shape).
+    // (cheaper, same shape). Boids always end up in the Group path so
+    // we can attach the centerline keel below the hull.
     const hasSuper = sil.superstructure && sil.superstructure.length > 0;
     const hasMast  = mastHeight > 1.5;
-    if (hasSuper || hasMast) {
+    const isBoid   = (kind === "m" || kind === "e");
+    if (hasSuper || hasMast || isBoid) {
       const group = new THREE.Group();
       group.add(new THREE.Mesh(geo, mat));
+      // ── Keel ────────────────────────────────────────────────────
+      // Thin centerline spine running ~70 % of the hull length,
+      // hanging just below the main hull baseline. Magnetic torpedoes
+      // set to "depth ≈ ship draught" detonate right under the keel;
+      // having a visible keel line makes that aim-versus-depth check
+      // obvious from any camera angle (and lines up with the in-game
+      // hull, where the keel is the deepest point a torpedo can hit).
+      // Keel height is capped at ~0.5 m unstretched (× DEPTH_STRETCH
+      // along Y like the rest of the depth axis) so it stays a thin
+      // structural cue rather than dominating the silhouette.
+      if (isBoid) {
+        const keelL  = len * 0.7;
+        const keelW  = Math.max(0.3, beam * 0.04);
+        const keelH  = Math.min(stretchY(0.5), Math.max(stretchY(0.2), submerged * 0.06));
+        const keelGeo = new THREE.BoxGeometry(keelW, keelH, keelL);
+        // Hangs straight down from the hull centerline. Box centre at
+        // y = -submerged - keelH/2 puts its top face flush with the
+        // hull bottom (= recorded draught) and its bottom face just
+        // below — a small protrusion that's visible from below / the
+        // side without distorting the hull proportions.
+        keelGeo.translate(0, -submerged - keelH / 2, 0);
+        // Share the hull material so the per-frame sink-tint pass
+        // (which traverses the group and rewrites every child's
+        // material.color) carries the keel along — otherwise it'd
+        // stay alive-purple under a grey wreck.
+        group.add(new THREE.Mesh(keelGeo, mat));
+      }
       // Deck plane sits at y = +hullFreeboard after the rotate +
       // translate above. Boxes go on top of it; box center y =
       // hullFreeboard + (box height / 2) so the bottom face touches
