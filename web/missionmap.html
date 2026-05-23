@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23aa</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23ab</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -5651,20 +5651,27 @@ function meshForEntity(id, kind, snap) {
     belowGeo.rotateY(-Math.PI / 2);
     belowGeo.translate(0, -submerged, 0);
     // Taper the bottom cap (everything at y ≈ -submerged) toward
-    // the centerline. tipScale = fraction of the silhouette beam at
-    // the keel line; 0.45 gives a clear "bilge curve" without making
-    // the keel section unrealistically narrow.
+    // the centerline IN THE BEAM DIRECTION ONLY. Scaling Z too (as
+    // an earlier build did) shortened the bottom-cap fore-aft as
+    // well, which made the rounded bow / square stern foreshorten
+    // at the keel level and read as a floating wedge. Keeping Z at
+    // 1× means the keel line runs the full ship length — the
+    // entire bow-to-stern outline narrows from full beam at the
+    // waterline to a thin keel strip at the recorded draught,
+    // exactly the underbody shape a real hull has.
+    //
+    // tipScale = 0.18 leaves a ~3 m wide keel section for a 17 m
+    // beam freighter — visible as a thin centerline line from
+    // any camera angle without looking like a pencil-thin fin.
     {
-      const tipScale = 0.45;
+      const tipScale = 0.18;
       const pos = belowGeo.attributes.position;
-      // Tolerance comparing against -submerged: ExtrudeGeometry's bottom
-      // cap vertices land exactly there, but we leave a small epsilon.
       const tol = 0.001;
       for (let i = 0; i < pos.count; i++) {
         const y = pos.getY(i);
         if (y < -submerged + tol) {
           pos.setX(i, pos.getX(i) * tipScale);
-          pos.setZ(i, pos.getZ(i) * tipScale);
+          // Z (fore-aft) stays at 1× — keel runs the full ship length.
         }
       }
       pos.needsUpdate = true;
@@ -5682,34 +5689,11 @@ function meshForEntity(id, kind, snap) {
       const group = new THREE.Group();
       group.add(new THREE.Mesh(aboveGeo, mat));
       group.add(new THREE.Mesh(belowGeo, mat));
-      // ── Keel ────────────────────────────────────────────────────
-      // Thin centerline spine running ~70 % of the hull length,
-      // hanging just below the tapered hull bottom. Magnetic torpedoes
-      // set to "depth ≈ ship draught" detonate right under the keel;
-      // having a visible keel line makes that aim-versus-depth check
-      // obvious from any camera angle. Width is tied to the bottom
-      // ring of the tapered hull (beam × tipScale × small fraction)
-      // so the keel feels like a continuation of the bilge curve
-      // rather than a bolted-on box. Same hull material so it tints
-      // along with the rest of the ship on sink, and so it visually
-      // reads as part of the hull (the user explicitly asked for the
-      // keel colour to match).
-      if (isBoid) {
-        const keelL  = len * 0.7;
-        const keelW  = Math.max(0.6, beam * 0.10);
-        // ~1.0 m unstretched → 5 units at DEPTH_STRETCH=5. Big enough
-        // to spot from a top-down camera; in a recording with the
-        // depth-stretch disabled it's still ~1 m, clearly visible
-        // against the underwater hull.
-        const keelH  = Math.max(stretchY(1.0), 4);
-        const keelGeo = new THREE.BoxGeometry(keelW, keelH, keelL);
-        // Box centre at y = -submerged - keelH/2 puts its top face
-        // flush with the tapered hull's bottom (= recorded draught)
-        // and its bottom face just below — a small visible protrusion
-        // that lets the captain read the keel line from any angle.
-        keelGeo.translate(0, -submerged - keelH / 2, 0);
-        group.add(new THREE.Mesh(keelGeo, mat));
-      }
+      // No separate keel mesh: the tapered below-water hull already
+      // converges to a thin centerline strip at the recorded draught
+      // (tipScale 0.18 above), so the keel line is visible without a
+      // bolted-on box hanging below. Magnetic-torpedo aim-versus-keel
+      // checks read off the bottom edge of the tapered hull directly.
       // Deck plane sits at y = +hullFreeboard after the rotate +
       // translate above. Boxes go on top of it; box center y =
       // hullFreeboard + (box height / 2) so the bottom face touches
