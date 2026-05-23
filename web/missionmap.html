@@ -513,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23ab</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23ac</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -7463,6 +7463,23 @@ function tooltipForHover(hov) {
     const pistol   = launch.magnetic ? "magnetic" : "impact";
     const gyroDeg  = launch.gyro != null ? launch.gyro.toFixed(0) + "°" : "—";
     const depthM   = launch.depthSet != null ? launch.depthSet.toFixed(1) + " m" : "—";
+    // Current depth at the playback cursor — useful for reading off
+    // exactly where the eel is as it tracks toward a target without
+    // having to scrub and re-hover. Prefers the depth-gauge sample
+    // (`d`, positive metres) and falls back to -y (world Y, negative
+    // for submerged) for legacy recordings without `d` on torpedoes.
+    let curDepthRow = "";
+    {
+      const snap = entitySnapshot(id, currentT);
+      if (snap) {
+        let cd = null;
+        if (snap.d != null)            cd = snap.d;
+        else if (snap.y != null)       cd = Math.max(0, -snap.y);
+        if (cd != null) {
+          curDepthRow = `<div class="row"><span class="k">Current depth</span><span>${cd.toFixed(1)} m</span></div>`;
+        }
+      }
+    }
     // Actual running depth from the torpedo's samples. depthSet is what
     // the captain dialled in; the eel doesn't always run exactly at that
     // depth (early run, wave deflection, mechanical slop). Show
@@ -7504,7 +7521,7 @@ function tooltipForHover(hov) {
             ${tubeRow}
             <div class="row"><span class="k">Type</span><span>${typeStr} · ${speedStr} · ${pistol}</span></div>
             <div class="row"><span class="k">Gyro angle</span><span>${gyroDeg}</span></div>
-            <div class="row"><span class="k">Depth setting</span><span>${depthM}</span></div>${runDepthRow}${rangeRow}`;
+            <div class="row"><span class="k">Depth setting</span><span>${depthM}</span></div>${curDepthRow}${runDepthRow}${rangeRow}`;
   }
   if (hov.kind === "hit") {
     const ev = data.events[hov.evIdx];
