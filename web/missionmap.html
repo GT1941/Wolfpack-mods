@@ -139,9 +139,17 @@
 
   /* Per-u-boat toggle buttons (View / Nav / Trail) in the right
      uboatList. Same visual language as the Follow button — neutral
-     dim until active, amber-on-fg when active. */
-  #uboatList .uTogglesRow {
-    display: flex; gap: 4px; padding: 2px 0 1px 30px;
+     dim until active, amber-on-fg when active. Stacked as a vertical
+     column on the right side of each boat panel, lined up directly
+     under the Follow button. */
+  #uboatList .bodyRow {
+    display: flex; gap: 6px; align-items: flex-start;
+  }
+  #uboatList .bodyRow .stats { flex: 1 1 auto; min-width: 0; padding-left: 30px; }
+  #uboatList .uTogglesCol {
+    display: flex; flex-direction: column; gap: 3px;
+    margin-left: auto;
+    flex: 0 0 auto;
   }
   #uboatList .uToggle {
     background: rgba(19,26,31,0.85);
@@ -150,9 +158,12 @@
     border-radius: 3px;
     font-family: inherit;
     font-size: 10px;
-    padding: 2px 6px;
+    padding: 2px 8px;
     cursor: pointer;
     letter-spacing: 0.04em;
+    text-align: center;
+    min-width: 64px;     /* matches the Follow button's footprint
+                            so the column lines up under it */
   }
   #uboatList .uToggle:hover { border-color: var(--amber); color: var(--fg); }
   #uboatList .uToggle.active {
@@ -195,11 +206,27 @@
   }
   #toiAdd:hover { color: var(--amber); border-color: var(--amber); }
   #trailsBody { display: flex; flex-direction: column; gap: 4px; }
-  #trailsBody label.toggle {
+  #trailsBody label.toggle,
+  #displayBody label.toggle {
     display: flex; align-items: center; gap: 6px;
     cursor: pointer; font-size: 12px;
   }
-  #trailsBody label.toggle input { cursor: pointer; }
+  #trailsBody label.toggle input,
+  #displayBody label.toggle input { cursor: pointer; }
+  /* Display panel stacks rows vertically so the label-size slider
+     gets its own line under the two checkboxes (rather than running
+     inline with them and overflowing the panel width). */
+  #displayBody { display: flex; flex-direction: column; gap: 6px; }
+  #displayBody .slider-row {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 12px;
+  }
+  #displayBody .slider-row .sliderHeader {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  #displayBody .slider-row input[type="range"] {
+    width: 100%; cursor: pointer; box-sizing: border-box;
+  }
   /* User-resizable hit table: default 36vh, drag the bottom-right corner
      to expand it downward up to 80vh when a captain wants more rows
      visible at once. */
@@ -371,7 +398,8 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
-    padding-left: 30px;     /* sit under the name, not the insignia */
+    /* padding-left now lives on .bodyRow .stats so it composes with
+       the new togglesCol layout without doubling up. */
     line-height: 1.45;
   }
   #uboatList button .stats .uk.warn { color: #ff5555; }
@@ -420,6 +448,42 @@
   }
   #scaleBar .label { display: block; text-align: center; }
 
+  /* Sinks log — bottom-left, just above the scale bar. Lists recent
+     ship_sunk events as playback reaches each one (synced to in-game
+     time, mirroring LogbookSeconds's reading). Stays hidden until at
+     least one sink has been reached; capped at the last few rows
+     (`SUNK_LOG_MAX`) so it can't fill the screen on a really
+     successful patrol. */
+  #sunkLog {
+    position: absolute;
+    left: 14px; bottom: 50px;
+    max-width: 320px;
+    padding: 5px 9px;
+    background: rgba(19,26,31,0.85);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--fg);
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; line-height: 1.45;
+    pointer-events: none;
+    user-select: none;
+    display: none;     /* shown via JS once at least one sink lands */
+  }
+  #sunkLog .row {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #sunkLog .row .gt   { color: var(--dim); margin-right: 6px; }
+  #sunkLog .row .name { color: #ff8c8c; }
+  #sunkLog .header {
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
   /* Hover tooltip — positioned at the cursor in JS. line-height tight so
      compact multi-line hit lists stay readable. */
   #tooltip {
@@ -449,7 +513,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-21p</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23u</span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -512,6 +576,13 @@
     </div>
     <div id="drop">Drop a MissionMap_*.json file here · drop or paste a chart screenshot to overlay it</div>
     <div id="scaleBar"><div class="bar"></div><span class="label">--</span></div>
+    <!-- Sinks log: appended-to as ship_sunk events get reached during
+         playback. Hidden by default; the JS reveals it on the first
+         sink and trims it to the last N entries. -->
+    <div id="sunkLog">
+      <div class="header">Sunk</div>
+      <div class="rows"></div>
+    </div>
     <div id="tooltip" style="display:none"></div>
     <!--
       3D HUD: top-right compass (rotates with azimuth so "N" always points
@@ -569,6 +640,13 @@
             <label class="toggle" title="Multiply visible u-boat pitch/roll by 3× so a 5° dive bubble looks like 15°. Numeric tilt readouts in the right menu still show the real value. Off by default — turn on if the real pitch is too subtle to see at your usual zoom.">
               <input type="checkbox" id="tiltAmplifyToggle"> Amplify tilt ×3
             </label>
+            <div class="slider-row" title="World-space scale of the floating labels above U-boats, merchants and escorts. 1.0× matches the original defaults; range covers the same min/max already used elsewhere in the viewer (≈0.5× = the boid label size, ≈2.0× = the largest hover sprites).">
+              <div class="sliderHeader">
+                <span>Label size</span>
+                <span id="labelScaleVal" style="color:var(--dim)">1.00×</span>
+              </div>
+              <input type="range" id="labelScaleSlider" min="0.5" max="10.0" step="0.1" value="1.0">
+            </div>
           </div>
         </div>
       </div>
@@ -1195,6 +1273,7 @@ function updateScrubLabel() {
   updateBottomRightClock();
   updateConvoyStats();
   updateUboatList();
+  updateSunkLog();
 }
 
 // Cap any depth-gauge value past 300 m — that's well past the test-depth
@@ -1300,6 +1379,48 @@ function updateGameTime() {
     String(h).padStart(2, "0") + ":" +
     String(m).padStart(2, "0") + ":" +
     String(s).padStart(2, "0");
+}
+
+// Sinks log — bottom-left, appended-to as playback reaches each
+// ship_sunk event. Mirrors what the in-game LogbookSeconds mod
+// would have written to the captain's log at the same moment.
+// Capped at SUNK_LOG_MAX rows so a high-scoring patrol doesn't
+// blow out the screen; older rows fall off the top.
+const SUNK_LOG_MAX = 6;
+function updateSunkLog() {
+  const root = document.getElementById("sunkLog");
+  if (!root) return;
+  if (!data || !Array.isArray(data.events)) {
+    root.style.display = "none";
+    return;
+  }
+  // Collect every ship_sunk whose recorded playT is <= currentT.
+  // Keep the LAST SUNK_LOG_MAX so the most recent kill is at the
+  // bottom (mirroring how a logbook scrolls).
+  const sinks = [];
+  for (const ev of data.events) {
+    if (ev.type !== "ship_sunk") continue;
+    if (ev.t == null || ev.t > currentT) continue;
+    sinks.push(ev);
+  }
+  if (sinks.length === 0) {
+    root.style.display = "none";
+    return;
+  }
+  const tail = sinks.slice(-SUNK_LOG_MAX);
+  const rowsHost = root.querySelector(".rows");
+  let html = "";
+  for (const ev of tail) {
+    const gt   = fmtEventGameTime(ev);
+    const name = ev.name ? prettifyBoidName(String(ev.name)) : "—";
+    // Tonnage chip — pulled from the event when present; recorder
+    // emits it via MerchantShipStats.Displacement at sink time.
+    const ton  = (ev.tonnage != null && ev.tonnage > 0)
+      ? `<span class="gt"> · ${Math.round(ev.tonnage).toLocaleString()} t</span>` : "";
+    html += `<div class="row"><span class="gt">${gt}</span><span class="name">${name}</span>${ton}</div>`;
+  }
+  if (rowsHost) rowsHost.innerHTML = html;
+  root.style.display = "block";
 }
 
 // Bottom-right floating clock. Two lines that advance with playback:
@@ -3617,6 +3738,77 @@ function mineTexture(color) {
   });
 }
 
+// Stylised "sinking ship" icon — a tilted hull silhouette with the
+// stern lifted clear of two wavy lines below the waterline. Replaces
+// the 💀 marker for the wreck overlay on a descending hull. Drawn as
+// a flat line-art glyph rather than an emoji so the read stays
+// consistent across browsers / OS emoji fonts and we control the
+// colour. Single colour, transparent background — caller picks the
+// tint via the colour arg.
+function sinkingShipTexture(color) {
+  return getIconTexture("sinkShip:" + color, (g, s) => {
+    g.strokeStyle = color;
+    g.fillStyle   = color;
+    g.lineWidth   = Math.max(2, s * 0.045);
+    g.lineCap     = "round";
+    g.lineJoin    = "round";
+
+    // Working in canvas coords (0,0 top-left, s,s bottom-right).
+    // Compose the icon by listing key points; the tilt is the stern
+    // (right side) lifted, the bow (left side) buried.
+    const cx = s * 0.50;
+    const cy = s * 0.55;     // visual centre, slightly below middle so waves fit
+    // Hull trapezoid — port and starboard tilted ~25° about cy.
+    const HULL = [
+      [cx - s * 0.36, cy + s * 0.08],   // bow tip (submerged, port-fwd)
+      [cx + s * 0.30, cy - s * 0.18],   // stern top (lifted out of water)
+      [cx + s * 0.34, cy - s * 0.06],   // stern bottom corner
+      [cx - s * 0.18, cy + s * 0.18],   // mid keel (deeper than the bow tip)
+    ];
+    g.beginPath();
+    g.moveTo(HULL[0][0], HULL[0][1]);
+    for (let i = 1; i < HULL.length; i++) g.lineTo(HULL[i][0], HULL[i][1]);
+    g.closePath();
+    g.fill();
+
+    // Mast leaning aft with the hull. Goes up-right from a foot
+    // near the stern shoulder to a tip above the lifted stern.
+    g.beginPath();
+    g.moveTo(cx + s * 0.10, cy - s * 0.08);
+    g.lineTo(cx + s * 0.18, cy - s * 0.46);
+    g.stroke();
+    // A single yardarm / cross spar so it reads as a mast not a
+    // line.
+    g.beginPath();
+    g.moveTo(cx + s * 0.10, cy - s * 0.28);
+    g.lineTo(cx + s * 0.22, cy - s * 0.32);
+    g.stroke();
+
+    // Two wavy waterlines under the hull. Quadratic curves zigzag
+    // left-right so the line reads as water without looking
+    // pixellated.
+    const waveY1 = cy + s * 0.26;
+    const waveY2 = cy + s * 0.36;
+    const left   = s * 0.08;
+    const right  = s * 0.92;
+    const amp    = s * 0.035;
+    const drawWave = (y) => {
+      g.beginPath();
+      g.moveTo(left, y);
+      const segs = 4;
+      for (let i = 1; i <= segs; i++) {
+        const tx = left + ((right - left) * i) / segs;
+        const cpx = left + ((right - left) * (i - 0.5)) / segs;
+        const cpy = y + ((i % 2 === 0) ? amp : -amp);
+        g.quadraticCurveTo(cpx, cpy, tx, y);
+      }
+      g.stroke();
+    };
+    drawWave(waveY1);
+    drawWave(waveY2);
+  });
+}
+
 function makeIconSprite(texture, worldSize = 50) {
   // depthTest:false so sprites placed underwater (DC explosions, status
   // anchors on a dived hull) can't be occluded by the water plane or
@@ -3946,10 +4138,12 @@ function updateDamagePopups() {
 // sprite grows in world space so its on-screen size stays put.
 // Clamped to avoid floating-point blowups at the extremes.
 const SPRITE_PIN_REF_DIST = 1500;
-function pinSpriteToCamera(spr, authoredW, authoredH) {
+function pinSpriteToCamera(spr, authoredW, authoredH, minK, maxK) {
   if (!spr || !spr.visible) return;
   const d = camera3d.position.distanceTo(spr.position);
-  const k = Math.max(0.4, Math.min(40, d / SPRITE_PIN_REF_DIST));
+  const lo = (minK != null) ? minK : 0.4;
+  const hi = (maxK != null) ? maxK : 40;
+  const k = Math.max(lo, Math.min(hi, d / SPRITE_PIN_REF_DIST));
   spr.scale.set(authoredW * k, authoredH * k, 1);
 }
 
@@ -4044,6 +4238,12 @@ function _lerpColor(a, b, t) {
 // the surface end.
 const _DEPTH_YELLOW = new THREE.Color("#facc15");
 const _DEPTH_RED    = new THREE.Color("#ff5555");
+// Scratch + target colours for per-frame hull tinting of convoy ships /
+// escorts during sink animation. _hullColorScratch is reused every
+// frame to avoid allocating; _hullColorWreck is the target grey shade
+// the alive purple/red lerps toward as sinkState.phase climbs 0→1.
+const _hullColorScratch = new THREE.Color();
+const _hullColorWreck   = new THREE.Color(0x6b7280);
 function depthGradientColor(d, surfaceColor) {
   if (d <= 0) return surfaceColor;
   if (d <= SURFACE_DEPTH_M) {
@@ -4283,11 +4483,13 @@ function updateUboatLabel3D(id, snap, meshPosition) {
   const dRich  = trendArrowRich(id, currentT, 3, "d", 0.5);
   const dArrow = dRich.arrow === "↑" ? "↓" : (dRich.arrow === "↓" ? "↑" : "");
   const speed = snap.s != null ? snap.s.toFixed(1) + "kn" : "";
-  // Depth: cap past DEPTH_DISPLAY_CAP_M ("300+m"). Also hide entirely
-  // when ≤ 2 m gauge — at that point the boat is effectively at the
-  // surface and the readout is just noise. ▼ prefix marks it as "depth"
-  // unambiguously, mirroring the periscope's depth-band indicator.
-  const depth = snap.d != null && snap.d > 2
+  // Depth: cap past DEPTH_DISPLAY_CAP_M ("300+m"). Hide entirely when
+  // the gauge reads ≤ 7 m — surface running and most periscope-depth
+  // hovering doesn't need the indicator and the labels get crowded.
+  // The right-side U-boat list panel keeps showing the full depth
+  // regardless. ▼ prefix marks it as "depth" unambiguously, mirroring
+  // the periscope's depth-band indicator.
+  const depth = snap.d != null && snap.d > 7
     ? "▼" + (snap.d > DEPTH_DISPLAY_CAP_M
         ? DEPTH_DISPLAY_CAP_M + "+m"
         : snap.d.toFixed(0) + "m")
@@ -4311,7 +4513,10 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     const maxH = uboatHpMax[id] || 1;
     hpPct = Math.round((maxH > 0 ? snap.hp / maxH : snap.hp) * 100);
   }
-  const hp = hpPct != null ? hpPct + "%" : "";
+  // Hide the HP readout when at full health — a clean label means
+  // "all systems nominal" at a glance. The right-side U-boat list
+  // panel still shows 100 % when full.
+  const hp = (hpPct != null && hpPct < 100) ? hpPct + "%" : "";
   const reversing = isReversing(id, currentT);
 
   const c          = uboatColors(snap.n, id);
@@ -4371,10 +4576,13 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     sprite.frustumCulled = false;
     // World-space size of the label. Bigger than before to stay readable
     // at typical viewing distances (zoom does scale these down, which is
-    // fine for cluttered scenes).
-    sprite.scale.set(562, 40, 1);   // matches 1800×128 canvas aspect (~14.06:1)
+    // fine for cluttered scenes). The user-tunable labelScale slider in
+    // the Display panel multiplies this base; we stamp the base on the
+    // entry so applyLabelScale() can rescale on-the-fly without compounding.
+    const baseW = 562, baseH = 40;   // matches 1800×128 canvas aspect (~14.06:1)
+    sprite.scale.set(baseW * labelScale, baseH * labelScale, 1);
     scene3d.add(sprite);
-    entry = { sprite, canvas, c2d, texture: tex, lastKey: "" };
+    entry = { sprite, canvas, c2d, texture: tex, lastKey: "", _baseScale: { x: baseW, y: baseH } };
     labelSprites.set(id, entry);
   }
 
@@ -4428,24 +4636,42 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     const n = parseInt(id.substring(1), 10);
     if (!isNaN(n)) crewIdx = n;
   }
-  // Labels float above the water column regardless of how deep the boat
-  // dives. Anchoring to mesh.y meant U-96 (crewIdx 0) would sink below the
-  // water plane past ~40 m and disappear behind it — depthTest:false fights
-  // occlusion but the sprite still draws into the dark water volume and
-  // gets visually swallowed. Pin them above the surface instead.
-  // Sit the label just above the water surface, with a small per-boat
-  // stagger so multiple boats close together don't perfectly overlap.
-  // Earlier offset (Y_TOP + 60 + crewIdx*70 = 61..271 world units up)
-  // looked OK at far zoom but was way above the hull at close zoom —
-  // labels appeared completely disconnected from their boats. New
-  // 8 + crewIdx*5 puts them roughly at the conning-tower height while
-  // still stacking when boats are stacked vertically on the map.
-  const labelY = Y_TOP + 8 + crewIdx * 5;
+  // Labels float above the water column regardless of how deep the
+  // boat dives. Anchoring to mesh.y meant U-96 (crewIdx 0) would sink
+  // below the water plane past ~40 m and disappear behind it —
+  // depthTest:false fights occlusion but the sprite still draws into
+  // the dark water volume and gets visually swallowed. Pin them above
+  // the surface instead.
+  //
+  // Camera-distance-aware lift: at close zoom the labels float ~25 m
+  // above the waterline (well clear of the conning tower); at far
+  // zoom they lift further (up to 120 m) so they don't crowd the
+  // hull when the whole scene is compressed onto the screen. Per-
+  // boat stagger (crewIdx * 10) keeps stacked boats' labels from
+  // perfectly overlapping.
+  const camDistL = camera3d.position.distanceTo(meshPosition);
+  const yLift    = Math.max(25, Math.min(120, camDistL * 0.05));
+  const labelY   = Y_TOP + yLift + crewIdx * 10;
   entry.sprite.position.set(meshPosition.x, labelY, meshPosition.z);
-  pinSpriteToCamera(entry.sprite, 320, 40);
-  // Cap the label width to the hull length so the readout never visually
-  // overruns the u-boat at any zoom level.
-  clampSpriteWidthToEntity(entry.sprite, UBOAT_HULL_LEN);
+  // labelScale is the user-tunable Display-panel multiplier; bake it
+  // into the authored values so the per-frame pin re-applies the
+  // slider's value (otherwise our one-shot sprite.scale set would be
+  // overwritten the very next render frame).
+  //
+  // Tighter min/max-K clamp than the default pin: minK = 1.0 keeps
+  // the label at least at authored size when zoomed in close
+  // (default 0.4 made it shrink to 40 % at extreme close-in, which
+  // was unreadable); maxK = 6.0 stops the runaway growth at very
+  // distant zoom that pushed labels to 40× by default. Combined with
+  // labelScale 1–10, total scale spans roughly 1×–60× rather than
+  // 0.4×–400×.
+  pinSpriteToCamera(entry.sprite, 320 * labelScale, 40 * labelScale, 1.0, 6.0);
+  // Cap the label width to a multiple of the hull length. Multiply the
+  // hull length by labelScale too so the cap grows in lockstep with
+  // the slider — at labelScale=10× the cap is 20× hull length, which
+  // gives the label room to actually be 10× larger instead of getting
+  // squashed back to 2× hull.
+  clampSpriteWidthToEntity(entry.sprite, UBOAT_HULL_LEN * labelScale);
 }
 
 // Convoy ship label: ship-type name + speed with trend arrow. Shown
@@ -4565,23 +4791,35 @@ function updateBoidLabel3D(id, kind, snap, meshPosition) {
     entry = null;
   }
   if (!entry) {
-    const sprite = makeTextSprite(text, kind === "m" ? "#c084fc" : "#ff8c8c", 280, 35);
+    const baseW = 280, baseH = 35;
+    const sprite = makeTextSprite(text, kind === "m" ? "#c084fc" : "#ff8c8c", baseW, baseH);
     if (!sprite) return;
-    entry = { sprite, lastKey: text };
+    // Apply the current user-tunable label scale on top of the base
+    // boid-label size, and stamp the base so applyLabelScale() can
+    // rescale without compounding when the slider is dragged.
+    sprite.scale.set(baseW * labelScale, baseH * labelScale, 1);
+    entry = { sprite, lastKey: text, _baseScale: { x: baseW, y: baseH } };
     scene3d.add(sprite);
     boidLabels.set(id, entry);
   }
   entry.sprite.position.set(meshPosition.x, Y_TOP + 50, meshPosition.z);
   entry.sprite.visible = true;
-  pinSpriteToCamera(entry.sprite, 280, 35);
+  // labelScale baked in so the per-frame pin re-applies the user's
+  // slider value (the pin overwrites sprite.scale every frame, so a
+  // one-shot scale on entry creation alone won't survive). Same
+  // 1.0–6.0 min/max-K clamp as the u-boat label so the labelScale
+  // slider behaves consistently across boat types.
+  pinSpriteToCamera(entry.sprite, 280 * labelScale, 35 * labelScale, 1.0, 6.0);
   // Cap label width to the hull length. boidMeta carries the real length
   // when the recorder captured BoxCollider dimensions; fall back to
   // kind-typical defaults that match the mesh fallbacks in meshForEntity.
+  // Multiply by labelScale so the cap grows with the slider — without
+  // this a 10× label gets squashed back to 2× hull length.
   const meta = boidMetaById ? boidMetaById.get(id) : null;
   const shipLen = (meta && meta.length > 1)
     ? meta.length
     : (kind === "m" ? 120 : 90);
-  clampSpriteWidthToEntity(entry.sprite, shipLen);
+  clampSpriteWidthToEntity(entry.sprite, shipLen * labelScale);
 }
 
 // Convoy-fleeing state lookup. AI_Convoy.startFleeing / stopFleeing emit
@@ -4608,26 +4846,36 @@ function convoyFleeingAt(t) {
   return state;
 }
 
-// Alerted / burning / fleeing state icons floating above each ship.
-// Alerted (❗) is per-escort — comes from snap.al; burning (🔥) is
-// per-boid — comes from snap.f. Fleeing (💡) is convoy-wide and shown
-// on every MERCHANT when AI_Convoy is in startFleeing state — gives
-// the "convoy with running lights on, trying to flee" read distinct
-// from per-escort alert.
+// Alerted / burning / fleeing / flooding state icons floating above
+// each ship. Alerted (❗) is per-escort — comes from snap.al; burning
+// (🔥) is per-boid — comes from snap.f. Fleeing (💡) is convoy-wide
+// and shown on every MERCHANT when AI_Convoy is in startFleeing state.
+// Flooding (💧) is per-boid — anything with hp < ~1 that's still
+// being sampled has taken at least one hit and is shipping water
+// somewhere; the icon goes away when the hull is full health or the
+// boid stops being sampled (sunk).
 function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
   let entry = boidIcons.get(id);
   if (!entry) {
     // Build lazily; only spend canvas allocs on ships that ever actually
     // change state during the recording.
-    entry = { alert: null, fire: null, flee: null };
+    entry = { alert: null, fire: null, flee: null, flood: null, wreck: null };
     boidIcons.set(id, entry);
   }
+  // Wreck icon is only shown while the boid is sinking — clear it
+  // here in case the boid is still alive (snap is current; flooding
+  // is fine but the death marker has no business showing).
+  if (entry.wreck) entry.wreck.visible = false;
   const alerted = !!(snap && snap.al);
   const burning = !!(snap && snap.f);
   // Convoy-wide fleeing flag — only render on merchants (escorts
   // already carry per-ship alert), so the two indicators stay
   // semantically distinct.
   const fleeing = (kind === "m") && convoyFleeingAt(currentT);
+  // Flooding — hp is normalised 0..1 (1 = full). 0.99 floor cuts
+  // out floating-point jitter from the recorder while still
+  // catching any meaningful hull damage.
+  const flooding = (snap && snap.hp != null && snap.hp < 0.99);
 
   if (alerted) {
     if (!entry.alert) {
@@ -4669,6 +4917,79 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
   } else if (entry.flee) {
     entry.flee.visible = false;
   }
+
+  if (flooding) {
+    if (!entry.flood) {
+      entry.flood = makeIconSprite(emojiTexture("💧", "#67e8f9"), 60);
+      scene3d.add(entry.flood);
+    }
+    // Stack right of all the other icons.
+    const dx = (alerted ? 40 : 0) + (burning ? 40 : 0) + (fleeing ? 40 : 0);
+    entry.flood.position.set(meshPosition.x + dx, Y_TOP + 105, meshPosition.z);
+    entry.flood.visible = true;
+    pinSpriteToCamera(entry.flood, 60, 60);
+  } else if (entry.flood) {
+    entry.flood.visible = false;
+  }
+}
+
+// Hide every floating-sprite auxiliary tied to a boid id — the
+// name label and the four LIVE state icons (alert / burning /
+// fleeing / flooding). Called when a boid stops being sampled
+// mid-recording (sunk, despawned, etc.) so the orphan sprites
+// don't keep rendering at the last-known position. The wreck icon
+// is deliberately NOT hidden here — it's the only marker we want
+// to stay with the descending hull.
+function hideBoidAuxiliaries(id) {
+  const lbl = boidLabels.get(id);
+  if (lbl && lbl.sprite) lbl.sprite.visible = false;
+  const ic = boidIcons.get(id);
+  if (ic) {
+    if (ic.alert) ic.alert.visible = false;
+    if (ic.fire)  ic.fire.visible  = false;
+    if (ic.flee)  ic.flee.visible  = false;
+    if (ic.flood) ic.flood.visible = false;
+    // ic.wreck intentionally left alone; showWreckIcon controls it.
+  }
+}
+
+// Show the sinking-ship wreck marker over a descending hull.
+// Lazily builds the sprite the first time the boid enters
+// sinkState, then re-positions it every frame to ride the hull
+// down. Stays alive in the boidIcons entry so it doesn't churn
+// — same lifecycle as the live state icons, just with the
+// opposite visibility logic.
+function showWreckIcon(id, meshPosition) {
+  let entry = boidIcons.get(id);
+  if (!entry) {
+    entry = { alert: null, fire: null, flee: null, flood: null, wreck: null };
+    boidIcons.set(id, entry);
+  }
+  if (!entry.wreck) {
+    // Custom line-art sinking-ship glyph in a pale-amber tint —
+    // reads clearly against the now-grey hull and against the dark
+    // water below it. Sized 70 px so the tilt + wave detail stay
+    // legible at typical convoy-zoom distances.
+    entry.wreck = makeIconSprite(sinkingShipTexture("#fde68a"), 70);
+    scene3d.add(entry.wreck);
+  }
+  // Float a hair above the hull deck so it reads clearly against
+  // the dimming grey material.
+  entry.wreck.position.set(meshPosition.x, meshPosition.y + 40, meshPosition.z);
+  entry.wreck.visible = true;
+  pinSpriteToCamera(entry.wreck, 70, 70);
+}
+
+// Counterpart to showWreckIcon — hide the marker without removing
+// the sprite from the scene graph. Called when the boid is parked
+// at the seabed (wreck has finished descending, the user wants the
+// hull to stay visible as a hoverable wreck but the floating
+// indicator above it to go away), and on the scrub-back / lag
+// paths where sinkAnimState returned null but the wreck sprite
+// might still be visible from a previous frame.
+function hideWreckIcon(id) {
+  const entry = boidIcons.get(id);
+  if (entry && entry.wreck) entry.wreck.visible = false;
 }
 
 // Park a grey "Missed" tag at the last position of a torpedo that never
@@ -4702,18 +5023,30 @@ function ensureMissedLabel(id, tr) {
 // regular in-scene label disappears with the entity when update3D no
 // longer renders a mesh; this pass keeps the captain able to read what
 // got hit even after the hull is gone.
-const SUNK_TRACK_GRACE_S = 30;
-const SUNK_LABEL_MAX_LAST_S = 4;
+//
+// Discriminator policy: the recorder stops emitting samples for a boid
+// when its GameObject goes away — either the dmgMngr.died (a kill) or
+// the game / a mod (e.g. LargerConvoy / TorpedoRange trim) explicitly
+// Destroy()'d the GO. From the viewer's perspective both are
+// equivalent: the ship is gone. Treat any track that ends well before
+// the recording does as a sinking and play the animation; the prior
+// last-speed gate vetoed every normal convoy kill because ships
+// usually die at 8–12 kn while underway.
+const SUNK_TRACK_GRACE_S = 5;     // tight margin against end-of-recording
 function ensureSunkBoidLabel(id, tr) {
   if (!tr.samples.length) return;
-  const last = tr.samples[tr.samples.length - 1];
+  const last  = tr.samples[tr.samples.length - 1];
+  const first = tr.samples[0];
   if (!last) return;
+  // Same trim filter as sinkAnimState: a boid that only ever has one
+  // sample (or whose track is t=0..t=0 with no duration) was trimmed
+  // by a mod-side Destroy at mission start, not killed. Skip the
+  // "sunk here" label too.
+  if (tr.samples.length < 2)   return;
+  if (last.t - first.t < 1)    return;
   // Track must end before recording does, otherwise the boid is just
   // alive at the end of playback — not sunk.
   if (last.t >= totalT - SUNK_TRACK_GRACE_S) return;
-  // Still moving when last seen? LargerConvoy can rotate a hull out
-  // mid-mission while it's underway; that's not a sinking.
-  if (last.s != null && last.s > SUNK_LABEL_MAX_LAST_S) return;
   // Don't show the marker until playback has reached the sinking.
   // Also hold the marker back while the descent animation is playing —
   // the parked label looks wrong floating over a hull that's still
@@ -5017,15 +5350,30 @@ function silhouetteForClass(cls, kind, len, beam) {
   if (cls === "tanker") {
     // T2-style: long flat hull, slightly rounded bow, tapered stern.
     // Two deck features — bridge midship, engine room near the stern.
-    draw({ style: "rounded", len: beam * 0.6 },
-         { style: "taper",   len: beam * 0.3 });
-    deck(beam * 0.7, beam * 0.65, beam * 0.5,  0);                   // bridge midship
-    deck(beam * 0.5, beam * 0.55, beam * 0.45, -halfL + beam * 0.7); // engine aft
+    //
+    // Bow length back up to 0.65×beam: when bow.len < halfB the
+    // rounded-bow arc shrinks below the full half-beam and creates a
+    // stubby, notched bow (the hull steps in to the smaller arc
+    // radius). At 0.65×beam the noseR clamps cleanly to halfB and
+    // there's an extra ~0.15×beam of flat plating between the
+    // bow shoulder and the rounded nose — gives the bow the
+    // elongated read a heavy tanker should have. Stern restored to
+    // 0.3×beam for the same reason on the aft taper.
+    //
+    // Superstructure-box heights kept at the smaller 0.35×beam
+    // values from 2026-05-23l — those fit cleanly under the mast
+    // and aren't what was making the hull look short.
+    draw({ style: "rounded", len: beam * 0.65 },
+         { style: "taper",   len: beam * 0.3  });
+    deck(beam * 0.55, beam * 0.55, beam * 0.35,  0);                  // bridge midship
+    deck(beam * 0.40, beam * 0.45, beam * 0.30, -halfL + beam * 0.5); // engine aft
   } else if (cls === "freighter") {
     // Liberty / Empire: rounded bow, square stern, single midship structure.
-    draw({ style: "rounded", len: beam * 0.7 },
+    // Bow at 0.65×beam for the same reason as the tanker — anything
+    // below 0.5×beam shrinks the rounded-bow arc and notches the hull.
+    draw({ style: "rounded", len: beam * 0.65 },
          { style: "square",  len: 0 });
-    deck(beam * 0.9, beam * 0.7, beam * 0.6, -beam * 0.3);           // bridge slightly aft of midship
+    deck(beam * 0.55, beam * 0.55, beam * 0.40, -beam * 0.25);        // bridge slightly aft of midship
   } else if (cls === "trawler") {
     // Small auxiliary: short rounded hull, single aft deckhouse.
     draw({ style: "rounded", len: beam * 0.55 },
@@ -5164,9 +5512,25 @@ function meshForEntity(id, kind, snap) {
     const totalH    = (meta && meta.height   > 0)
       ? meta.height
       : fallbackHeightForClass(cls, kind, beam, rawDraught);
-    const freeboard = Math.max(1.5, totalH - rawDraught);
+    const freeboardFull = Math.max(1.5, totalH - rawDraught);
     const submerged = stretchY(rawDraught);   // exaggerated like u-boat depth
-    const hullHeight = submerged + freeboard;
+
+    // MerchantShipStats.height is the total height including the mast,
+    // so extruding the silhouette to the full freeboard turned hulls
+    // into flat-topped slabs the height of the mast tip. Split the
+    // recorded freeboard 30 / 70 between hull and mast: the hull
+    // (deck side above water) gets 30 %, the rest goes onto a tall
+    // thin vertical mast that rises FROM the deck. Real freighter
+    // king-posts and fishing-trawler masts are dramatically taller
+    // than the deck height, and this ratio matches that visual.
+    //
+    // The waterline (y = 0 in mesh-local coords) still sits exactly
+    // at the recorded draught — translate(0, -submerged, 0) puts the
+    // keel at -submerged and the (now-much-shorter) deck at
+    // +hullFreeboard.
+    const mastHeight    = freeboardFull * 0.7;
+    const hullFreeboard = freeboardFull - mastHeight;     // 30 % of freeboardFull
+    const hullHeight    = submerged + hullFreeboard;
 
     const geo = new THREE.ExtrudeGeometry(sil.shape, {
       depth: hullHeight,
@@ -5188,24 +5552,57 @@ function meshForEntity(id, kind, snap) {
     // If the silhouette carries superstructure boxes, build a Group so
     // we can compose hull + deck features. Otherwise emit a plain Mesh
     // (cheaper, same shape).
-    if (sil.superstructure && sil.superstructure.length > 0) {
+    const hasSuper = sil.superstructure && sil.superstructure.length > 0;
+    const hasMast  = mastHeight > 1.5;
+    if (hasSuper || hasMast) {
       const group = new THREE.Group();
       group.add(new THREE.Mesh(geo, mat));
-      // Deck plane sits at y = +freeboard after the rotate + translate
-      // above. Boxes go on top of it; box center y = freeboard +
-      // (box height / 2) so the bottom face touches the deck.
-      const deckY = freeboard;
-      // Shape's X was port-stbd (beam direction). After rotateY(-π/2)
-      // the original shape-X maps to world -X. Shape's "+X = bow" maps
-      // to world +Z. So a feature whose silhouette position is (zRel)
-      // along the fore-aft axis lands at world z = zRel; a port-stbd
-      // offset (x in our deck()) maps to world x = -x. We negate to
-      // keep "x positive = starboard" intuitive for callers.
-      for (const b of sil.superstructure) {
-        const box = new THREE.BoxGeometry(b.w, b.h, b.l);
-        box.translate(-b.x, deckY + b.h / 2, b.z);
-        const m = new THREE.Mesh(box, mat);
-        group.add(m);
+      // Deck plane sits at y = +hullFreeboard after the rotate +
+      // translate above. Boxes go on top of it; box center y =
+      // hullFreeboard + (box height / 2) so the bottom face touches
+      // the deck.
+      if (hasSuper) {
+        const deckY = hullFreeboard;
+        // Shape's X was port-stbd (beam direction). After rotateY(-π/2)
+        // the original shape-X maps to world -X. Shape's "+X = bow" maps
+        // to world +Z. So a feature whose silhouette position is (zRel)
+        // along the fore-aft axis lands at world z = zRel; a port-stbd
+        // offset (x in our deck()) maps to world x = -x. We negate to
+        // keep "x positive = starboard" intuitive for callers.
+        for (const b of sil.superstructure) {
+          const box = new THREE.BoxGeometry(b.w, b.h, b.l);
+          box.translate(-b.x, deckY + b.h / 2, b.z);
+          const m = new THREE.Mesh(box, mat);
+          group.add(m);
+        }
+      }
+      // Mast: thin vertical cylinder from the hull deck up to the
+      // full recorded freeboard. Stands in for "the part of the
+      // ship's height that's actually mast / king-post / funnel
+      // riggings rather than hull volume". Radius scales mildly
+      // with beam so a passenger liner's mast looks chunkier than
+      // a trawler's. Six-segment cylinder is plenty at this size.
+      if (hasMast) {
+        const mastR  = Math.max(0.3, beam * 0.04);
+        const mastGeo = new THREE.CylinderGeometry(mastR, mastR, mastHeight, 6);
+        // Mast Z-position. After the geometry rotations the silhouette's
+        // bow direction (+X in shape space) maps to world +Z, so positive
+        // mastZ pushes the mast forward toward the bow.
+        //
+        // Most classes get the mast placed forward of midship (a typical
+        // foremast / king-post location ahead of the bridge), so a
+        // freighter visibly has "bridge aft, mast forward" rather than
+        // a single stick poking out of the bridge box. Passenger liners
+        // are the exception — their silhouette has a long midship
+        // superstructure block and a centre mast / funnel is the real
+        // visual cue, so they stay at z = 0.
+        const mastZ = (cls === "passenger") ? 0 : len * 0.3;
+        // Bottom of the cylinder sits on the deck; centre at
+        // deckY + mastHeight/2 = hullFreeboard + mastHeight/2.
+        mastGeo.translate(0, hullFreeboard + mastHeight / 2, mastZ);
+        const mast = new THREE.Mesh(mastGeo, mat);
+        mast.renderOrder = 50;
+        group.add(mast);
       }
       mesh = group;
     } else {
@@ -5306,12 +5703,32 @@ function sinkAnimState(id, tr, t) {
   const samples = tr.samples;
   if (!samples.length) return null;
   const last = samples[samples.length - 1];
+  const first = samples[0];
+
   // Track must end before the recording does to qualify as a sinking.
   if (last.t >= totalT - SUNK_TRACK_GRACE_S) return null;
-  // Still moving fast at the last sample? LargerConvoy can rotate a
-  // hull out underway — not a kill.
-  if (last.s != null && last.s > SUNK_LABEL_MAX_LAST_S) return null;
-  const dt = t - last.t;
+
+  // Mod-side trim filter. TorpedoRange (and LargerConvoy*) Destroy
+  // excess boids right at mission start before the spawner's first
+  // post-spawn boid tick. Those boids appear in the t=0 snapshot
+  // but never again — exactly ONE sample, or first.t == last.t.
+  // Without this filter every trimmed merchant flipped into the
+  // sink animation the moment playback advanced past t=0, painting
+  // a wreck-grey formation before any torpedoes were even fired.
+  // A real kill always spans at least one boid interval (~15 s)
+  // before death, so requiring last.t > first.t + 1 s is a clean
+  // discriminator.
+  if (samples.length < 2)         return null;
+  if (last.t - first.t < 1)       return null;
+
+  // Defer the descent start by roughly half a boid interval. The
+  // actual death moment lies somewhere between this sample and the
+  // next-that-never-came; lining the animation up with last.t fires
+  // it visibly BEFORE the torpedo finishes its run in the viewer.
+  // 8 s lag puts the start near the most-likely death moment for a
+  // boidInterval=15 s recording.
+  const SINK_ANIM_START_LAG_S = 8;
+  const dt = t - (last.t + SINK_ANIM_START_LAG_S);
   if (dt < 0) return null;                // hasn't sunk yet at playT
   // Resolve final wreck depth from bathymetry; fall back to a sensible
   // visible depth when there's no nearby reading.
@@ -5350,9 +5767,19 @@ function update3D() {
     if (currentT > lastSampleTimeFor(id)) {
       sinkState = sinkAnimState(id, tr, currentT);
       if (!sinkState) {
-        // Mid-recording: track ended early and not a sinking → hide.
-        // End-of-playback: keep the entity parked at its last sample.
-        if (currentT < totalT - 0.5) continue;
+        // Mid-recording: track ended early and not a sinking → hide
+        // everything per-id. The continue below skips the rest of
+        // the render loop for this entity; without the explicit
+        // hide() calls the boid's state icons (alert / fire / flee /
+        // flood / etc.) stay frozen at their last-rendered visibility
+        // and leave a trail of orphan droplets / flames over the
+        // wreck. End-of-playback case (within 0.5 s of totalT) keeps
+        // the entity parked at its last sample, no hide.
+        if (currentT < totalT - 0.5) {
+          hideBoidAuxiliaries(id);
+          hideWreckIcon(id);   // covers scrub-back / 8 s lag / late grace
+          continue;
+        }
       }
     }
     const snap = entitySnapshot(id, currentT);
@@ -5402,20 +5829,58 @@ function update3D() {
     // Override Y + opacity while the sink animation is playing. The
     // entity is past its last sample so snap.x/snap.z are the parked
     // last-known position — we just descend it.
+    // ── Per-frame hull colour ──
+    //
+    // Run this for EVERY boid frame, sink or alive, so scrubbing
+    // backwards past a death moment restores the original purple /
+    // red (the prior version only ever wrote 0x6b7280 grey and
+    // never set it back). For sinking ships, lerp from the original
+    // colour toward grey based on sinkState.phase so the change
+    // reads as a gradual drain rather than an abrupt flip at
+    // last.t — that flip was the "blink" the user reported.
+    if (tr.kind === "m" || tr.kind === "e") {
+      const aliveHex = (tr.kind === "m") ? 0xc084fc : 0xef4444;
+      const wreckHex = 0x6b7280;
+      const t01 = sinkState ? Math.min(1, Math.max(0, sinkState.phase)) : 0;
+      const cTmp = _hullColorScratch.setHex(aliveHex);
+      if (t01 > 0) {
+        cTmp.lerp(_hullColorWreck, t01);
+      }
+      mesh.traverse(child => {
+        if (child && child.material && child.material.color) {
+          child.material.color.copy(cTmp);
+        }
+      });
+    }
+
     if (sinkState) {
       y = sinkState.y;
-      // First time we're sinking this mesh, enable transparency on its
-      // material so we can fade it. Cheaper to flip the flags lazily
-      // than to author every ship material as transparent up front.
-      if (mesh.material) {
-        if (!mesh.material.transparent) {
-          mesh.material.transparent = true;
-          mesh.material.needsUpdate = true;
-        }
-        mesh.material.opacity = sinkState.alpha;
-      }
+      // Hide the floating boid label + live state icons while the
+      // hull descends. The "sank here" parked label takes over once
+      // the animation finishes; without this the alert / burning /
+      // flee / flood icons keep rendering at the last-known sample
+      // position and leave a phantom on the seabed.
+      hideBoidAuxiliaries(id);
     }
     mesh.position.set(snap.x, stretchY(y), snap.z);
+    // showWreckIcon AFTER mesh.position.set so the marker reads the
+    // freshly-applied descending Y instead of the previous frame's
+    // (surface) position. Without this the wreck sprite floats at
+    // sea level while the hull is already deep underwater.
+    //
+    // Visibility policy:
+    //  - descending  (sinkState && !sinkState.parked) → show; the
+    //    icon rides the hull down to the seabed.
+    //  - parked      (sinkState && sinkState.parked)  → hide; the
+    //    grey hull stays at the seabed as a hoverable wreck but
+    //    the floating indicator above it goes away.
+    if (sinkState) {
+      if (sinkState.parked) {
+        hideWreckIcon(id);
+      } else {
+        showWreckIcon(id, mesh.position);
+      }
+    }
     // Per-uboat text label (name + speed + depth + battery + under-keel)
     if (tr.kind === "u") {
       updateUboatLabel3D(id, snap, mesh.position);
@@ -5490,8 +5955,21 @@ function update3D() {
       }
     }
     // Propeller wash / wake for anything under way.
-    if (tr.kind === "t" || tr.kind === "u" || tr.kind === "e" || tr.kind === "m") {
+    //
+    // Convoy ships (merchants + escorts) opted out per user request —
+    // the per-ship wash wedge made the convoy formation read as a
+    // pile of churning whitewater rather than discrete hulls. U-boats
+    // and torpedoes still get the wake (informational for "is the
+    // boat moving" / "where is the eel headed").
+    if (tr.kind === "t" || tr.kind === "u") {
       updateWake(id, tr.kind, snap, mesh, yaw);
+    } else if (tr.kind === "e" || tr.kind === "m") {
+      // Hide any wake that was previously emitted for this id before
+      // the opt-out. updateWake's existing low-speed path already
+      // does this, but a wake that was visible last frame would
+      // otherwise linger forever once we stop calling the function.
+      const w = wakeMeshes.get(id);
+      if (w) w.visible = false;
     }
     // Search-light cone for boids that have acquired a target.
     if (tr.kind === "m" || tr.kind === "e") {
@@ -5702,13 +6180,17 @@ function updateEventSprites3D() {
       pinSpriteToCamera(spr, sz, sz);
     }
 
-    // torpedo_hit: hover a floating "-Ndmg" label next to the ●. Uses the
-    // dmg field the mod emits at explode time. Pinned to camera so it
-    // stays readable at any zoom.
+    // torpedo_hit: hover a floating "-DMG" tag next to the ●. The
+    // ev.dmg field is Torpedo2.TORPEDO_DAMAGE = 100 (a NOMINAL
+    // constant, not the per-ship HP delta), so showing the number
+    // is misleading — "-100 dmg" suggests an instakill that isn't
+    // borne out by the ship's actual hp trajectory. Just flag the
+    // hit; the real damage shows up in the boid's hp sample
+    // bracketing the event and via the per-uboat hit-table delta.
     if (ev.type === "torpedo_hit" && ev.dmg != null) {
       let dmgLbl = dmgLabels.get(i);
       if (!dmgLbl) {
-        dmgLbl = makeTextSprite("-" + Math.round(ev.dmg) + " dmg", "#ff8888", 200, 28);
+        dmgLbl = makeTextSprite("-DMG", "#ff8888", 120, 28);
         if (dmgLbl) {
           dmgLabels.set(i, dmgLbl);
           scene3d.add(dmgLbl);
@@ -5718,7 +6200,7 @@ function updateEventSprites3D() {
         dmgLbl.position.set(ev.x, stretchY(y) + 40, ev.z);
         dmgLbl.material.opacity = alpha;
         dmgLbl.visible = true;
-        pinSpriteToCamera(dmgLbl, 200, 28);
+        pinSpriteToCamera(dmgLbl, 120, 28);
       }
     }
 
@@ -6211,6 +6693,8 @@ loadData = function(json) {
       if (e.alert) { scene3d.remove(e.alert); e.alert.material.map.dispose(); e.alert.material.dispose(); }
       if (e.fire)  { scene3d.remove(e.fire);  e.fire.material.map.dispose();  e.fire.material.dispose();  }
       if (e.flee)  { scene3d.remove(e.flee);  e.flee.material.map.dispose();  e.flee.material.dispose();  }
+      if (e.flood) { scene3d.remove(e.flood); e.flood.material.map.dispose(); e.flood.material.dispose(); }
+      if (e.wreck) { scene3d.remove(e.wreck); e.wreck.material.map.dispose(); e.wreck.material.dispose(); }
     }
     for (const [id, e]    of hpBars)        { scene3d.remove(e.sprite); e.texture.dispose(); e.sprite.material.dispose(); }
     for (const [i,  lbl]  of dmgLabels)     { scene3d.remove(lbl); lbl.material.map.dispose(); lbl.material.dispose(); }
@@ -6323,6 +6807,27 @@ function fmtGameTimeAtSec(playT) {
   const s = Math.floor((mF - m) * 60);
   return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
 }
+// Parse an "HH:MM:SS" (or "HH:MM") game-time string to seconds-from-midnight.
+// Returns null on missing/unparseable input.
+function gtToSec(gt) {
+  if (!gt || typeof gt !== "string") return null;
+  const m = gt.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  return (+m[1]) * 3600 + (+m[2]) * 60 + (m[3] ? +m[3] : 0);
+}
+// Best-effort game-time string for a recorded event. Prefers the event's
+// recorded `gt` (the recorder reads the live game clock at event time —
+// authoritative, matches the in-game logbook). Falls back to the
+// rate × playT reconstruction only when the event predates `gt` being
+// captured. Long missions drift seconds-to-minutes in reconstruction
+// because the game-time rate is captured once at recording arm and the
+// game's actual time-acceleration fluctuates around it, so an event
+// with `gt` should always use it.
+function fmtEventGameTime(ev) {
+  if (ev && typeof ev.gt === "string" && /^\d{1,2}:\d{2}:\d{2}$/.test(ev.gt)) return ev.gt;
+  if (ev && typeof ev.azureTime === "string" && /^\d{1,2}:\d{2}:\d{2}$/.test(ev.azureTime)) return ev.azureTime;
+  return fmtGameTimeAtSec(ev ? ev.t : 0);
+}
 // Convert in-game HH:MM:SS into a "playT" that lines up with currentT —
 // returns null if no TOI / unparseable / no game-clock anchor.
 function parseTOI(s) {
@@ -6335,10 +6840,20 @@ function parseTOI(s) {
 // { d, toiSec } in seconds (signed; +ve = hit was late) or null if no
 // usable TOI is set, no recording is loaded, or the recording lacks a
 // game-clock anchor.
-function closestTOIInfo(hitPlayT) {
-  if (!data || data.gameTimeStartHours == null) return null;
-  const k = gameTimeRate();
-  const hitGameSec = (data.gameTimeStartHours * 3600 + k * ((data._uboatT0 || 0) + hitPlayT)) % 86400;
+function closestTOIInfo(hitArg) {
+  if (!data) return null;
+  // Accept either an event object (preferred — uses the recorded gt
+  // for drift-free comparison) or a bare playT (legacy callers).
+  let hitGameSec = null;
+  if (hitArg && typeof hitArg === "object") {
+    hitGameSec = gtToSec(hitArg.gt) || gtToSec(hitArg.azureTime);
+  }
+  if (hitGameSec == null) {
+    if (data.gameTimeStartHours == null) return null;
+    const hitPlayT = (hitArg && typeof hitArg === "object") ? hitArg.t : hitArg;
+    const k = gameTimeRate();
+    hitGameSec = (data.gameTimeStartHours * 3600 + k * ((data._uboatT0 || 0) + hitPlayT)) % 86400;
+  }
   let best = null;
   for (const toi of userTOIs) {
     if (toi.sec == null) continue;
@@ -6360,8 +6875,9 @@ function fmtTOIDelta(d) {
   return sign + m + ":" + sec.padStart(4, "0");
 }
 // Backwards-compat wrapper still consumed by the hit-tooltip code.
-function deltaToTOI(hitPlayT) {
-  const info = closestTOIInfo(hitPlayT);
+// Accepts either an event (preferred — uses recorded gt) or a bare playT.
+function deltaToTOI(hitArg) {
+  const info = closestTOIInfo(hitArg);
   return info ? fmtTOIDelta(info.d) : null;
 }
 
@@ -6500,8 +7016,8 @@ function rebuildUboatStats() {
       for (const h of hits) {
         const row = document.createElement("div");
         row.className = "uboatHitRow";
-        const gt = fmtGameTimeAtSec(h.t) || ("t+" + h.t.toFixed(0) + "s");
-        const info = closestTOIInfo(h.t);
+        const gt = fmtEventGameTime(h) || ("t+" + h.t.toFixed(0) + "s");
+        const info = closestTOIInfo(h);
         const tSpan = document.createElement("span"); tSpan.textContent = gt;
         const dSpan = document.createElement("span");
         if (info) {
@@ -6662,6 +7178,39 @@ if (_depthStretchToggleEl) {
 let tiltAmplifyOn = false;
 const TILT_AMPLIFY_STORE_KEY = "missionmap.tiltAmplify.v1";
 const _tiltAmpToggleEl = $("tiltAmplifyToggle");
+
+// User-tunable multiplier applied to the world-space size of the
+// floating labels above U-boats, merchants and escorts. 1.0 = the
+// original defaults (sprite.scale 562×40 for U-boats; makeTextSprite
+// 280×35 for boids); slider range 0.5–2.0 covers roughly the
+// smallest/largest text-sprite sizes already used in the viewer.
+// Persisted across reloads so a captain's preferred readability
+// survives a refresh.
+let labelScale = 1.0;
+const LABEL_SCALE_STORE_KEY = "missionmap.labelScale.v1";
+const _labelScaleSliderEl = $("labelScaleSlider");
+const _labelScaleValEl    = $("labelScaleVal");
+try {
+  const stored = parseFloat(localStorage.getItem(LABEL_SCALE_STORE_KEY) || "");
+  if (isFinite(stored) && stored >= 0.5 && stored <= 10.0) labelScale = stored;
+} catch { }
+if (_labelScaleSliderEl) {
+  _labelScaleSliderEl.value = String(labelScale);
+  if (_labelScaleValEl) _labelScaleValEl.textContent = labelScale.toFixed(2) + "×";
+  _labelScaleSliderEl.addEventListener("input", () => {
+    const v = parseFloat(_labelScaleSliderEl.value);
+    if (!isFinite(v)) return;
+    labelScale = v;
+    if (_labelScaleValEl) _labelScaleValEl.textContent = labelScale.toFixed(2) + "×";
+    try { localStorage.setItem(LABEL_SCALE_STORE_KEY, String(labelScale)); } catch { }
+    // Slider only mutates the global labelScale — the per-frame
+    // pinSpriteToCamera calls for U-boat / boid labels bake
+    // labelScale into their authored dimensions, so the next render
+    // tick picks up the new value automatically. Just kick a render
+    // so paused playback updates immediately.
+    if (typeof markRender3DDirty === "function") markRender3DDirty();
+  });
+}
 if (_tiltAmpToggleEl) {
   let stored = null;
   try { stored = localStorage.getItem(TILT_AMPLIFY_STORE_KEY); } catch { }
@@ -6785,8 +7334,15 @@ function tooltipForHover(hov) {
     // for misses. Tagged "Run" for hits, "Last seen" for misses so it's clear
     // whether the value is the actual range to target or just the trail length.
     const rangeRow = torpedoRangeRow(id, launch);
+    // Firing tube — recorder writes a `tube` int (1–5 surviving from
+    // W_TDC.launchTorpedo's tube argument). Omit the row for legacy
+    // recordings that don't carry it.
+    const tubeRow = (typeof launch.tube === "number" && launch.tube > 0)
+      ? `<div class="row"><span class="k">Tube</span><span>${launch.tube}</span></div>`
+      : "";
     return `<div class="hd">Torpedo — fired by ${owner}</div>
-            <div class="row"><span class="k">Fired at</span><span>${fmtGameTimeAtSec(launch.t)}</span></div>
+            <div class="row"><span class="k">Fired at</span><span>${fmtEventGameTime(launch)}</span></div>
+            ${tubeRow}
             <div class="row"><span class="k">Type</span><span>${typeStr} · ${speedStr} · ${pistol}</span></div>
             <div class="row"><span class="k">Gyro angle</span><span>${gyroDeg}</span></div>
             <div class="row"><span class="k">Depth setting</span><span>${depthM}</span></div>${runDepthRow}${rangeRow}`;
@@ -6805,9 +7361,13 @@ function tooltipForHover(hov) {
       const nm = tr && tr.samples[0] && tr.samples[0].n;
       targetName = (nm ? prettifyBoidName(String(nm)) : "") || (tr && tr.kind === "e" ? "Escort" : "Merchant");
     }
-    const dTOI = deltaToTOI(ev.t);
+    const dTOI = deltaToTOI(ev);
+    const hitTubeRow = (typeof ev.tube === "number" && ev.tube > 0)
+      ? `<div class="row"><span class="k">Tube</span><span>${ev.tube}</span></div>`
+      : "";
     return `<div class="hd">${owner} — Hit on ${targetName}</div>
-            <div class="row"><span class="k">Hit at</span><span>${fmtGameTimeAtSec(ev.t)}</span></div>
+            <div class="row"><span class="k">Hit at</span><span>${fmtEventGameTime(ev)}</span></div>
+            ${hitTubeRow}
             ${dTOI ? `<div class="row"><span class="k">Δ TOI</span><span>${dTOI}</span></div>` : ""}
             <div class="row"><span class="k">Damage</span><span>${dmg}</span></div>
             <div class="row"><span class="k">Impact angle</span><span>${ang}</span></div>
@@ -6893,7 +7453,7 @@ function tooltipForHover(hov) {
       };
       for (const h of hits) {
         const ownerName = h.owner != null ? crewIdxBoatName(h.owner) : "?";
-        const d = deltaToTOI(h.t);
+        const d = deltaToTOI(h);
         const dmgInfo = hpDeltaForHit(h.t);
         let dmgTxt = "";
         if (dmgInfo) {
@@ -6903,7 +7463,7 @@ function tooltipForHover(hov) {
           // Fallback: nominal torpedo damage units.
           dmgTxt = "-" + Math.round(h.dmg) + " dmg";
         }
-        html += `<div class="row"><span class="k">${ownerName} · ${fmtGameTimeAtSec(h.t)}</span><span>${dmgTxt}${d ? " (Δ "+d+")" : ""}</span></div>`;
+        html += `<div class="row"><span class="k">${ownerName} · ${fmtEventGameTime(h)}</span><span>${dmgTxt}${d ? " (Δ "+d+")" : ""}</span></div>`;
       }
     } else {
       html += `<div class="row"><span class="k">No recorded hits</span><span></span></div>`;
@@ -7233,7 +7793,7 @@ function rebuildUboatList() {
                   : "Nav: Full";
     const navActive = navMode !== "off" ? " active" : "";
     const togglesHtml = ownerInt >= 0
-      ? `<div class="uTogglesRow">
+      ? `<div class="uTogglesCol">
            <button class="uToggle${viewOn  ? " active" : ""}" data-tk="view"  data-owner="${ownerInt}" title="Show / hide this boat's mesh, label and depth pole">View</button>
            <button class="uToggle${navActive}" data-tk="nav" data-owner="${ownerInt}" title="Cycle navigation chart visibility: Off → Live (draws appear as they were made) → Full (all drawings shown immediately)">${navLabel}</button>
            <button class="uToggle${trailOn ? " active" : ""}" data-tk="trail" data-owner="${ownerInt}" title="Show / hide this boat's trail line">Trail</button>
@@ -7244,8 +7804,12 @@ function rebuildUboatList() {
       `<div class="nameRow">${imgHtml}<span style="color:${col.fill || "#fff"}">${nm}</span>` +
       `<button class="followBtn${followActive}" data-boat-id="${id}" title="Lock the camera to this boat (M-key independent)">${followLabel}</button>` +
       `</div>` +
-      `<div class="stats">--</div>` +
-      togglesHtml;
+      // Body row: stats fill the left column, toggle buttons stack
+      // as a column on the right, directly under the Follow button.
+      `<div class="bodyRow">` +
+        `<div class="stats">--</div>` +
+        togglesHtml +
+      `</div>`;
     btn.addEventListener("click", (ev) => {
       // Don't fire camera-focus when the click was on the Follow button
       // or one of the per-boat toggles — those have their own handlers.
@@ -7390,14 +7954,23 @@ function updateUboatList() {
     const dArrowSpan = dArrow ? `<span style="color:${dRich.color || depthColor}">${dArrow}</span>` : "";
 
     // Heading + under-keel.
-    const hdg = snap.h != null ? snap.h.toFixed(0).padStart(3, "0") + "°" : "--";
+    // snap.h is stored in mirrored-world space (we flip h at load to keep
+    // hull bows pointing in their direction of travel after the x-mirror).
+    // For the on-screen compass bearing we un-mirror again so the printed
+    // number matches what the captain reads off the in-game NavMap and
+    // matches the convoy-avg heading next to it (which also un-mirrors).
+    const hdg = snap.h != null
+      ? (((360 - snap.h) % 360 + 360) % 360).toFixed(0).padStart(3, "0") + "°"
+      : "--";
     const ukWarn = snap.uk != null && snap.uk < 15;
     const uk = snap.uk != null ? snap.uk.toFixed(0) + " m" : "--";
 
-    // Battery — suppress at ≥ 99 % so a fully charged boat doesn't
-    // clutter the panel. Colour by remaining charge.
+    // Battery — always shown in the right-side panel so the captain
+    // always has a current-charge readout. (The floating in-scene
+    // label still suppresses ≥ 99 % since it's a cluttered view.)
+    // Colour by remaining charge.
     let batPart = "";
-    if (snap.bat != null && snap.bat < 0.99) {
+    if (snap.bat != null) {
       const batPct = Math.round(snap.bat * 100);
       let batColor = "inherit";
       if      (snap.bat < 0.15) batColor = "#ff5555";
