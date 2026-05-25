@@ -624,6 +624,7 @@
           <div class="panelBody" id="trailsBody">
             <label class="toggle"><input type="checkbox" id="trailConvoyOn"> Convoy (merchants)</label>
             <label class="toggle"><input type="checkbox" id="trailEscortOn"> Escorts</label>
+            <label class="toggle" title="Project a long red ray forward from every escort along its current heading. Helps predict where each escort is steering. Surface escorts only — sunk hulls and merchants are unaffected."><input type="checkbox" id="escortHeadingRaysOn"> Escort heading rays</label>
             <div style="color:var(--dim); font-size:11px; padding-top:4px; line-height:1.4;">
               U-boat trails toggle per-boat from the right-side U-boat list.
             </div>
@@ -793,6 +794,50 @@ function shipPixelLength(realM) {
   return Math.max(SHIP_PX_MIN, Math.min(SHIP_PX_MAX, realM * view.scale));
 }
 
+// ── Length sanity-check / overrides ───────────────────────────────
+//
+// Wolfpack's MerchantShipStats.length is wrong for at least one
+// asset: heavy_tanker_7 reports length=35.3 m, beam=17.4 m,
+// height=39.6 m. Height > length is physically impossible, and the
+// in-game 3-D model is clearly ~150 m.
+//
+// Confirmed (2026-05-24): the bogus value is *invisible* in normal
+// gameplay — the Recognition Manual reads a different data source
+// and shows the correct length, the TDC is manual so the player
+// types in what they see on the manual, and ConvoySpawner places
+// ships by their real bounding size (HT7 lands in the inner ring
+// at r=387 m alongside the other ~100 m tankers, not on the rim).
+// The MissionMap recorder is the only consumer reading
+// MerchantShipStats.length verbatim — so the viewer is the right
+// (and only) place to correct it.
+//
+// LENGTH_OVERRIDES: hand-curated by class name. The 1.9.x recorder
+// stamps the asset class name into boid_meta as `n`, so look-ups
+// against it are stable across recordings.
+const LENGTH_OVERRIDES = {
+  "heavy_tanker_7": 150,
+};
+
+// Heuristic catch-all for unknown bogus values. A ship's hull
+// length should always exceed its beam by at least 3×
+// (real-world tanker L:B is ~5-6, smallest in-game still > 3),
+// and should always exceed its height — masts/superstructure are
+// shorter than the hull on every real surface ship.
+function lengthLooksBogus(length, beam, height) {
+  if (!(length > 0)) return false;            // 0 means "not recorded"
+  if (beam   > 0 && length < beam   * 3)   return true;
+  if (height > 0 && length < height * 0.8) return true;
+  return false;
+}
+
+// Best-effort recovery when an asset isn't in LENGTH_OVERRIDES.
+// Tanker / freighter L:B is ~5-6 in-game; 5.5 errs slightly short
+// rather than long, which is safer (a too-long hull stretches
+// past torpedo-hit positions and reads oddly on replays).
+function estimateLengthFromBeam(beam) {
+  return beam > 0 ? beam * 5.5 : 100;
+}
+
 // Newer recordings drop the `k` field on every entity to save space; the
 // kind is recoverable from the id's first character (m/e/u/t/d). Old files
 // still carry `k` and we honour that if present.
@@ -903,15 +948,64 @@ function loadData(json) {
   // viewer can render the underwater portion of the hull at scale —
   // matters for "did the torpedo pass under or hit the side" reads,
   // since torpedo depth is captured per launch event.
+  //
+  // Sanity-check the length value on the way in: Wolfpack's ship data
+  // has known-bogus entries (heavy_tanker_7 reports 35 m while its
+  // 3-D model is ~150 m — height > length, which is physically
+  // impossible). LENGTH_OVERRIDES is a hand-curated list of fixes
+  // keyed by class name; lengthLooksBogus catches anything else that
+  // slips through with a heuristic comparing length to beam + height.
   boidMetaById.clear();
   for (const ev of data.events) {
     if (ev && ev.type === "boid_meta" && ev.id &&
         typeof ev.length === "number" && typeof ev.beam === "number") {
+      let len    = ev.length;
+      const cls  = typeof ev.n === "string" ? ev.n : "";
+      const beam = ev.beam;
+      const ht   = typeof ev.height === "number" ? ev.height : 0;
+
+      if (LENGTH_OVERRIDES[cls] != null) {
+        const corrected = LENGTH_OVERRIDES[cls];
+        if (Math.abs(len - corrected) > 0.5) {
+          console.warn(`[boid_meta] length override for ${cls}: ${len.toFixed(1)} m → ${corrected} m`);
+          len = corrected;
+        }
+      } else if (lengthLooksBogus(len, beam, ht)) {
+        const est = estimateLengthFromBeam(beam);
+        console.warn(`[boid_meta] suspicious length for ${cls || ev.id}: ${len.toFixed(1)} m (beam=${beam}, height=${ht}) — using ${est.toFixed(1)} m`);
+        len = est;
+      }
+
+      // Procedural-build parameters (merchants only on 1.9.17+).
+      // Section lengths in metres summing to ShipLength; curvatures
+      // are unitless taper weights; island positions are metres
+      // from the bow. Carried through to drawShip so the 2-D
+      // top-down silhouette tapers at the right places instead of
+      // using hardcoded proportions.
+      const shape = (ev.shape && typeof ev.shape === "object") ? {
+        bow:     +ev.shape.bow     || 0,
+        fwd:     +ev.shape.fwd     || 0,
+        mid:     +ev.shape.mid     || 0,
+        aft:     +ev.shape.aft     || 0,
+        stern:   +ev.shape.stern   || 0,
+        bCurve:  +ev.shape.bCurve  || 0,
+        bCurve2: +ev.shape.bCurve2 || 0,
+        sCurve:  +ev.shape.sCurve  || 0,
+        fIsl:    +ev.shape.fIsl    || 0,
+        mIsl:    +ev.shape.mIsl    || 0,
+        bIsl:    +ev.shape.bIsl    || 0,
+        // 1.9.19+. Enum integers: see Plugin.cs for meanings.
+        sup:     +ev.shape.sup     || 0,
+        eng:     +ev.shape.eng     || 0,
+        masts:    typeof ev.shape.masts === "string" ? ev.shape.masts : "",
+      } : null;
+
       boidMetaById.set(ev.id, {
-        length: ev.length,
-        beam:   ev.beam,
+        length: len,
+        beam:   beam,
         draught: typeof ev.draught === "number" ? ev.draught : 0,
-        height:  typeof ev.height  === "number" ? ev.height  : 0,
+        height:  ht,
+        shape:   shape,
       });
     }
   }
@@ -972,21 +1066,43 @@ function loadData(json) {
     }
   }
 
-  // Mirror world X so east appears on screen-left (matching the in-game
-  // NavMap convention the user reads off of). Done as a data-time transform
-  // — not a renderer-time mirror — so ship icons, chart PNGs, and grid
-  // labels stay in their natural orientation; only the coordinates flip.
+  // Mirror world X so the chart matches standard compass orientation
+  // (N up, E right) after Three.js's right-handed camera mirror — done
+  // as a data-time transform so ship icons, chart PNGs, and grid labels
+  // stay in their natural orientation; only the coordinates flip.
   // Headings also flip: h → (360 - h) so the bow keeps pointing in the
   // actual direction of travel after the X axis is inverted.
+  //
+  // 2026-05-25: previously the mirror touched only ev.x; chart-line
+  // endpoints (ev.x2) leaked through in raw Unity coords and ended up
+  // on the opposite side of the mirror, stretching every line to span
+  // the whole map. Also, chart_add k=timenode events carry `h` as the
+  // HOUR OF DAY (not a heading), so blanket-negating ev.h corrupted
+  // their labels (h=8 → 352). Both holes patched below.
   for (const s of data.samples) {
     for (const e of s.e) {
       if (typeof e.x === "number") e.x = -e.x;
-      if (typeof e.h === "number") e.h = ((360 - e.h) % 360 + 360) % 360;
+      if (typeof e.h === "number")  e.h  = ((360 - e.h)  % 360 + 360) % 360;
+      // tb (target_bearing on escorts, 1.9.29+) is a compass bearing
+      // the same way h is — mirror it through (360 - tb) so the
+      // heading ray points at the in-game intercept after the X flip.
+      if (typeof e.tb === "number") e.tb = ((360 - e.tb) % 360 + 360) % 360;
     }
   }
   for (const ev of data.events) {
-    if (typeof ev.x === "number") ev.x = -ev.x;
-    if (typeof ev.h === "number") ev.h = ((360 - ev.h) % 360 + 360) % 360;
+    if (typeof ev.x  === "number") ev.x  = -ev.x;
+    // map_grid carries both x1 and x2 as the cell's west/east bounds;
+    // chart_add k=line carries x2 as the line endpoint. Both belong in
+    // the mirrored coordinate space along with ev.x.
+    if (typeof ev.x1 === "number") ev.x1 = -ev.x1;
+    if (typeof ev.x2 === "number") ev.x2 = -ev.x2;
+    // Chart time-node events use `h` as the hour-of-day; every other
+    // event that carries `h` uses it as a heading. Skip the negation
+    // for time-nodes so labels like "8:15" render correctly.
+    const isTimeNode = (ev.type === "chart_add" || ev.type === "chart_update") && ev.k === "timenode";
+    if (!isTimeNode && typeof ev.h === "number") {
+      ev.h = ((360 - ev.h) % 360 + 360) % 360;
+    }
   }
   if (data.map) {
     const lo = -data.map.maxX, hi = -data.map.minX;
@@ -1757,13 +1873,31 @@ function drawMine(x, y, radius, fillColor) {
 
 // Hull silhouette: pointed bow (forward, +x in local coords), parallel mid,
 // flat stern. `lengthPx` is the bow→stern length, `ratio` is length:beam.
-function drawShip(x, y, h, lengthPx, ratio, fill, stroke) {
-  const len  = lengthPx;
-  const beam = len / ratio;
-  const rad  = (-h + 90) * Math.PI / 180;
+//
+// History: 1.9.18-1.9.23 used MerchantShipStats.shape's section "lengths"
+// to taper proportionally per asset. Real recordings revealed those
+// fields are parametric SHAPE MODIFIERS in roughly [-1, +1], not metres
+// — they often sum to 0 or negative, breaking the per-asset proportional
+// scaling outright. 1.9.24 reverted the hull to a fixed hex silhouette
+// and now reinterprets:
+//   - islands as PRESENCE+SIZE flags at fixed proportional positions
+//     (fIsl=25 %, mIsl=50 %, bIsl=75 % of hull), value scales island
+//     length
+//   - the Masts string as a bow→stern sequence of deck structures —
+//     'm' mast, 'k' derrick/crane, 'f' funnel — rendered with distinct
+//     glyphs at evenly-spaced positions
+//   - funnel from EnginePlacement enum, positioned on the appropriate
+//     fixed section (50 % amidship, 75 % aft)
+function drawShip(x, y, h, lengthPx, ratio, fill, stroke, meta) {
+  const len   = lengthPx;
+  const beam  = len / ratio;
+  const halfB = beam * 0.5;
+  const rad   = (-h + 90) * Math.PI / 180;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-rad);
+
+  // Hull (fixed proportions — always).
   ctx.beginPath();
   ctx.moveTo( len * 0.50,  0           );  // bow point
   ctx.lineTo( len * 0.30,  beam * 0.50 );  // forward shoulder (stbd)
@@ -1775,6 +1909,152 @@ function drawShip(x, y, h, lengthPx, ratio, fill, stroke) {
   ctx.closePath();
   if (fill)   { ctx.fillStyle   = fill;   ctx.fill();   }
   if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+
+  // Procedural deck features (merchant shape data only).
+  const shape = (meta && meta.shape) ? meta.shape : null;
+  if (shape && (fill || stroke)) {
+    // Pixel-per-metre using the recorded ship length, so feature sizes
+    // scale with the ship's real dimensions rather than the canvas
+    // pixel count.
+    const realLen = (meta && meta.length > 1) ? meta.length : 100;
+    const pxPerM  = len / realLen;
+
+    // Map a fraction-from-bow [0..1] to a local x along the deck.
+    // Use the 88 % of length between forward shoulder and stern corner
+    // as the placeable deck — keeps everything out of the bow point
+    // and off the stern transom.
+    function deckX(frac) {
+      return (len * 0.30) - (len * 0.80) * frac;   // 0 → forward shoulder, 1 → stern corner
+    }
+
+    if (pxPerM > 0.06) {
+      const baseColor = stroke || fill;
+
+      // ── Islands as raised hull sections ──────────────────────
+      //
+      // shape.fIsl / mIsl / bIsl ∈ [0..1]: 0 = absent, 1 = full-size.
+      //
+      // Islands are the HULL ITSELF stepped up a few metres, not
+      // separate buildings. Rendering rules per the recognition-
+      // manual silhouettes:
+      //   - Always FLUSH with the hull on the sides (full beam).
+      //   - Forecastle (fIsl) sits at the BOW: its forward edge
+      //     touches the bow tip, extending back by lenP.
+      //   - Poop deck (bIsl) sits at the STERN: its aft edge
+      //     touches the stern tip, extending forward by lenP.
+      //   - Bridge deck (mIsl) sits at midship, centred on x = 0.
+      //
+      // From top-down, raised hull catches less light, so we render
+      // it as a darker overlay across the full beam with no outline
+      // (outlines made the boxes look like sheds glued to the deck
+      // rather than part of the hull).
+      // Per-anchor max length so mid (bridge deck) islands can be
+      // longer than fore / aft (forecastle / poop). Matches the 3-D
+      // viewer's maxLenFor().
+      function maxLenForAnchor(anchor) {
+        if (anchor === "mid") return Math.max(16, Math.min(60, realLen * 0.42));
+        return Math.max(12, Math.min(35, realLen * 0.22));
+      }
+      ctx.fillStyle    = "rgba(0, 0, 0, 0.35)";
+      const islSlots = [
+        { v: shape.fIsl, anchor: "front" },
+        { v: shape.mIsl, anchor: "mid"   },
+        { v: shape.bIsl, anchor: "rear"  },
+      ];
+      const bowTip2D   =  len * 0.5;
+      const sternTip2D = -len * 0.5;
+      for (const i of islSlots) {
+        if (!(i.v > 0)) continue;
+        const islMax = maxLenForAnchor(i.anchor);
+        const lenP = Math.max(3, (islMax * Math.min(1, i.v)) * pxPerM);
+        let leftX, rightX;
+        if (i.anchor === "front")      { rightX = bowTip2D;   leftX  = rightX - lenP; }
+        else if (i.anchor === "rear")  { leftX  = sternTip2D; rightX = leftX  + lenP; }
+        else                           { leftX  = -lenP * 0.5; rightX = lenP * 0.5;   }
+        ctx.fillRect(leftX, -halfB, rightX - leftX, beam);
+      }
+
+      // ── Funnel from EnginePlacement ─────────────────────────
+      //
+      // 0 = Unspecified  → no funnel from this signal
+      // 1 = Amidship     → funnel at mid (50 %)
+      // 2 = Aft          → funnel at back (75 %)
+      // Rendered as a small dark block straddling the centreline,
+      // intended to sit on whichever island is at the same deck
+      // fraction.
+      if (shape.eng === 1 || shape.eng === 2) {
+        const frac = shape.eng === 1 ? 0.50 : 0.75;
+        const funW = Math.max(1.2, Math.min(4, pxPerM * 4));
+        const funH = islHalfW * 0.5;
+        ctx.fillStyle = "#3a3a3a";
+        ctx.fillRect(deckX(frac) - funW * 0.5, -funH, funW, funH * 2);
+      }
+
+      // ── Masts string ─────────────────────────────────────────
+      //
+      // Bow→stern sequence of deck structures, one per char. Matches
+      // the wording the in-game recognition manual uses ("mast,
+      // funnel, mast", etc.):
+      //
+      //   m = mast      — slim pole. Small filled dot.
+      //   k = kingpost  — stout post with cargo-derrick booms
+      //                    extending fore/aft. Filled dot + two
+      //                    short horizontal booms along the keel.
+      //                    Visibly distinct from a plain mast at
+      //                    a glance.
+      //   f = funnel    — small dark block, drawn IN ADDITION to
+      //                    the EnginePlacement-positioned funnel
+      //                    (they usually coincide).
+      //
+      // Positions are evenly distributed at (i+1)/(N+1) of the deck.
+      // Visibility gate lowered to 0.12 px/m so kingposts and masts
+      // still show on zoomed-out convoy views.
+      const mastsStr = (shape.masts || "").toLowerCase();
+      if (mastsStr.length > 0 && pxPerM > 0.12) {
+        const n = mastsStr.length;
+        for (let i = 0; i < n; i++) {
+          const cx = deckX((i + 1) / (n + 1));
+          const c  = mastsStr[i];
+          if (c === "m") {
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.arc(cx, 0, Math.max(1, Math.min(1.8, pxPerM * 1.0)), 0, Math.PI * 2);
+            ctx.fill();
+          } else if (c === "k") {
+            // Kingpost: two posts straddling the keel, joined by a
+            // crossbar athwartships. From top-down that reads as a
+            // pair of dots port + stbd with a line between them —
+            // visibly different from a plain pole mast (single
+            // centreline dot).
+            const r        = Math.max(1, Math.min(1.6, pxPerM * 0.9));
+            const postSep  = Math.min(halfB * 0.5, Math.max(2.5, halfB * 0.45));
+            ctx.fillStyle  = baseColor;
+            ctx.strokeStyle = baseColor;
+            ctx.lineWidth   = Math.max(0.6, Math.min(1.4, pxPerM * 0.8));
+            // Crossbar
+            ctx.beginPath();
+            ctx.moveTo(cx, -postSep);
+            ctx.lineTo(cx,  postSep);
+            ctx.stroke();
+            // Port post
+            ctx.beginPath();
+            ctx.arc(cx, -postSep, r, 0, Math.PI * 2);
+            ctx.fill();
+            // Starboard post
+            ctx.beginPath();
+            ctx.arc(cx,  postSep, r, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (c === "f") {
+            const funW = Math.max(1.0, Math.min(3, pxPerM * 3));
+            const funH = islHalfW * 0.40;
+            ctx.fillStyle = "#3a3a3a";
+            ctx.fillRect(cx - funW * 0.5, -funH, funW, funH * 2);
+          }
+        }
+      }
+    }
+  }
+
   ctx.restore();
 }
 
@@ -1975,9 +2255,27 @@ function draw() {
       drawArrow(sx, sy, snap.h, 5, COLOR.t);
       ctx.globalAlpha = 1;
     } else if (tr.kind === "m") {
-      drawShip(sx, sy, snap.h, shipPixelLength(SHIP_LEN_M.m), SHIP_RATIO.m, COLOR.m, null);
+      // Prefer per-asset meta if recorded (length, beam, shape sections);
+      // otherwise fall back to the generic 120 m × 1:6 silhouette.
+      const meta = boidMetaById.get(id);
+      const pxLen = meta && meta.length > 1
+        ? shipPixelLength(meta.length)
+        : shipPixelLength(SHIP_LEN_M.m);
+      const ratio = meta && meta.length > 1 && meta.beam > 0.1
+        ? meta.length / meta.beam
+        : SHIP_RATIO.m;
+      drawShip(sx, sy, snap.h, pxLen, ratio, COLOR.m, null, meta);
     } else if (tr.kind === "e") {
-      drawShip(sx, sy, snap.h, shipPixelLength(SHIP_LEN_M.e), SHIP_RATIO.e, COLOR.e, null);
+      const meta = boidMetaById.get(id);
+      const pxLen = meta && meta.length > 1
+        ? shipPixelLength(meta.length)
+        : shipPixelLength(SHIP_LEN_M.e);
+      const ratio = meta && meta.length > 1 && meta.beam > 0.1
+        ? meta.length / meta.beam
+        : SHIP_RATIO.e;
+      // Escorts have no procedural shape — meta.shape is null so
+      // drawShip falls back to the legacy hexagonal outline.
+      drawShip(sx, sy, snap.h, pxLen, ratio, COLOR.e, null, meta);
     } else if (tr.kind === "d") {
       ctx.fillStyle = "#94a3b8";
       ctx.beginPath();
@@ -2388,6 +2686,8 @@ const sceneMeshes = new Map();   // entity id → mesh
 const sceneTrails = new Map();   // entity id → line
 const wakeMeshes  = new Map();   // entity id → propeller-wash wedge
 const searchLights = new Map();  // boid id → search-light cone (visible when alerted)
+const escortHeadingRays = new Map();  // escort id → forward heading ray (toggled in Trails panel)
+const convoyBeams       = new Map();  // boid id → [cone1, cone2] pair, only visible at night when alerted
 let chartPlane = null;
 
 // World-Y range of interest: just above the waterline down to the recorded
@@ -2642,6 +2942,7 @@ function init3D() {
   controls3d._onChange = () => {
     updateHud3D();
     updateNavalGridVisibility();
+    updateDepthMarkerVisibility();
     markRender3DDirty();
   };
 
@@ -3184,7 +3485,13 @@ function buildWaterAndFloor() {
           const sz1 = z1 + row * h1;
           const sz2 = sz1 + h1;
           if (sx2 < padMinX || sx1 > padMaxX || sz2 < padMinZ || sz1 > padMaxZ) continue;
-          const subLabel = cell.label + subDigit(col, row);
+          // loadData mirrors world X (Unity left-handed → Three.js right-
+          // handed), so iteration col=0 (lowest viewer X) is actually the
+          // EAST compass column, and col=2 is WEST. subDigit assumes
+          // col=0 = west, so flip col before looking up the digit.
+          // Without this flip, AN 4992 (compass-west within AN 499)
+          // appears labeled on the AN 4993 cell and vice-versa.
+          const subLabel = cell.label + subDigit(2 - col, row);
 
           const loop1 = addCellBoundary(sx1, sz1, sx2, sz2, false);
           loop1.userData.navalGridLevel = 1;
@@ -3217,8 +3524,11 @@ function buildWaterAndFloor() {
           const sz1 = z1 + row * h2;
           const sz2 = sz1 + h2;
           if (sx2 < padMinX || sx1 > padMaxX || sz2 < padMinZ || sz1 > padMaxZ) continue;
-          const parentDigit = subDigit(Math.floor(col / 3), Math.floor(row / 3));
-          const ownDigit    = subDigit(col % 3, row % 3);
+          // Same X-mirror compensation as level 1 (see comment above).
+          // Both the parent-cell column and the own-cell column run
+          // east-to-west in iteration order after loadData's mirror.
+          const parentDigit = subDigit(2 - Math.floor(col / 3), Math.floor(row / 3));
+          const ownDigit    = subDigit(2 - (col % 3), row % 3);
           const subLabel    = cell.label + parentDigit + ownDigit;
 
           const loop2 = addCellBoundary(sx1, sz1, sx2, sz2, true);
@@ -3408,8 +3718,11 @@ function buildDepthMarkers() {
   };
 
   const b = (data && data.map) ? data.map : { minX: -5000, maxX: 5000, minZ: -5000, maxZ: 5000 };
-  // ~2× the previous sizing so the depth numbers are easier to read.
-  const labelSpan = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 0.030;
+  // 2026-05-25: user reported the depth numbers were too big and crowded
+  // each other on dense bathy plots. Shrunk from 0.030 → 0.012 of the
+  // map span (about 40 % of the previous footprint). Reads as a chart
+  // annotation now rather than a top-level grid label.
+  const labelSpan = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 0.012;
 
   // Clip to the recording's play-area bounds — markers far outside the
   // mission scene would clutter the seafloor with chart noise from
@@ -3438,8 +3751,42 @@ function buildDepthMarkers() {
     mesh.position.set(m.x, yFloorWorld, m.z);
     mesh.renderOrder = -7;
     mesh.userData.kind = "grid";
+    // LOD tier from MissionMap 1.9.28+ recordings. 0 = coarse (markers2,
+    // ~8 km grid), 1 = fine (markers1, ~4 km grid). Older recordings or
+    // markers emitted via the FindObjectsOfType fallback have no level
+    // and stay always-visible.
+    if (typeof m.level === "number") mesh.userData.depthMarkerLevel = m.level;
     scene3d.add(mesh);
   }
+  updateDepthMarkerVisibility();
+}
+
+// Switch which tier of depth markers is shown based on camera zoom.
+// Mirrors Wolfpack's DepthMarkerHandler.updatePosition, which swaps
+// between markers1 (fine) and markers2 (coarse) as the chart zoom
+// crosses a distance threshold. Markers without a `level` field
+// (pre-1.9.28 recordings or handler-not-found fallback) stay visible
+// at every zoom.
+function updateDepthMarkerVisibility() {
+  if (!scene3d || !camera3d) return;
+  // Single threshold — coarse at viewport ≥ 30 km, fine below. Picked
+  // so each tier reads as a chart annotation: at 8 km grid spacing
+  // markers crowd above ~30 km viewport, at 4 km spacing they crowd
+  // above ~15 km. Switching at 30 km keeps the coarse set readable
+  // when zoomed-out and brings the fine set in when the camera is
+  // close enough that ~4 km spacing matters.
+  let showLevel = 0;
+  try {
+    const dist = camera3d.position.distanceTo(controls3d ? controls3d.target : new THREE.Vector3(0,0,0));
+    const fovRad = (camera3d.fov || 50) * Math.PI / 180;
+    const viewSpan = 2 * dist * Math.tan(fovRad / 2);
+    showLevel = (viewSpan < 30000) ? 1 : 0;
+  } catch {}
+  for (const obj of scene3d.children) {
+    if (obj.userData && typeof obj.userData.depthMarkerLevel === "number")
+      obj.visible = (obj.userData.depthMarkerLevel === showLevel);
+  }
+  markRender3DDirty();
 }
 
 function buildChartDrawings() {
@@ -3507,12 +3854,48 @@ function buildChartDrawings() {
   };
 
   for (const d of state.values()) {
+    // `sub` is the SUBMARINE index — which U-boat the drawing
+    // belongs to. `owner` is the player slot. In multi-boat
+    // lobbies these diverge (e.g. four players on U-96 + four on
+    // U-564 → owner 0..7, sub 0..1). For boat-tinting and the
+    // per-boat overlay toggle we want the SUB index; fall back
+    // to owner for pre-1.9.27 recordings that didn't capture sub.
+    const sub   = (typeof d.sub   === "number") ? d.sub   : -1;
     const owner = (typeof d.owner === "number") ? d.owner : -1;
-    const baseCol = owner >= 0
-      ? uboatColors(null, "u" + owner).fill   // boat-tinted
-      : "#9fb5cc";                            // neutral slate
-    const baseColHex = new THREE.Color(baseCol);
+    const boatKey = sub >= 0 ? sub : owner;
+    const rawBoatCol = boatKey >= 0
+      ? uboatColors(null, "u" + boatKey).fill
+      : "#9fb5cc";
+    // Desaturate the boat tint so chart drawings read as muted /
+    // sketched, not bright. Without this, a player's pencil
+    // drawings rendered at full boat colour are easy to mistake
+    // for the boat's TRAIL line at a glance. Blending 60 % toward
+    // a mid grey keeps enough hue to tell "this is U-96's
+    // drawing" but pushes the value into "paper-pencil" territory.
+    const blended = new THREE.Color(rawBoatCol).lerp(new THREE.Color(0x888888), 0.6);
+    const baseColHex = blended;
+    const baseCol = "#" + blended.getHexString();
     const kind = d.k || "point";
+
+    // Filter out Wolfpack's reusable preview shapes — the
+    // line / circle the user sees being drawn while they drag.
+    // MissionMap 1.9.25+ stamps a `sketch` flag on these so we can
+    // drop them without heuristics. For older recordings (or the
+    // brief window between drag-start and the sketch flag being
+    // captured) fall back to "zero-size" detection: a line that
+    // ends at the world origin, a circle with r < 1, an empty
+    // text. These leak through as crosses / hairlines / dots and
+    // are not drawings the user committed.
+    if (d.sketch === true) continue;
+    if (kind === "line") {
+      const zeroEnd = (Math.abs(d.x2 || 0) < 1 && Math.abs(d.z2 || 0) < 1);
+      if (zeroEnd) continue;
+    } else if (kind === "circle") {
+      if (!(d.r > 1)) continue;
+    } else if (kind === "text") {
+      const txt = (d.t || "").toString();
+      if (txt.length === 0 || txt === "sketch text\r") continue;
+    }
 
     // Helper: tag every chart object with its kind + owner + first-seen
     // timestamp, set its initial visibility against the per-U-boat
@@ -3522,14 +3905,24 @@ function buildChartDrawings() {
     const chartT = firstSeenT.get(d.id);
     const addChartObj = (obj) => {
       obj.userData.kind = "chart";
-      obj.userData.chartOwner = owner;
+      // chartOwner is used by the per-boat overlay toggle. Use
+      // the submarine index when available (multi-boat lobbies);
+      // fall back to player-slot owner for pre-1.9.27 recordings.
+      obj.userData.chartOwner = boatKey;
       obj.userData.chartT = chartT;
-      obj.visible = chartOwnerVisible(owner, chartT);
+      obj.visible = chartOwnerVisible(boatKey, chartT);
       scene3d.add(obj);
     };
 
     if (kind === "line") {
-      const buf = new Float32Array([d.x, Y, d.z, d.x2, Y, d.z2]);
+      // W_MapLine.endPos is captured by the recorder as ABSOLUTE world
+      // coordinates of the line's far endpoint. Render from start
+      // (x,z) to end (x2,z2) directly — both already passed through
+      // loadData's X-mirror, so they're in the same Three.js-space
+      // coordinate system as samples and ship positions.
+      const ex = (typeof d.x2 === "number") ? d.x2 : d.x;
+      const ez = (typeof d.z2 === "number") ? d.z2 : d.z;
+      const buf = new Float32Array([d.x, Y, d.z, ex, Y, ez]);
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(buf, 3));
       const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({
@@ -3573,25 +3966,101 @@ function buildChartDrawings() {
       addChartObj(spr);
     }
     else if (kind === "timenode") {
-      // Small X marker on the surface — matches the in-game time-node
-      // glyph. h/m/s data stays in the JSON for hover/tooltips; no
-      // permanent label sprite (the chart would be unreadable with one
-      // 352:04:30 stamp per marker on busy missions).
-      const r = Math.max(45, mapW * 0.003);
-      const segs = [
-        [d.x - r, d.z - r, d.x + r, d.z + r],   // ↘ stroke
-        [d.x - r, d.z + r, d.x + r, d.z - r],   // ↗ stroke
-      ];
-      for (const [x1, z1, x2, z2] of segs) {
-        const buf = new Float32Array([x1, Y, z1, x2, Y, z2]);
+      // Time-node marker. Material index from W_MapPoint.materialInt
+      // selects both shape AND colour from the in-game time-node
+      // material palette. Mapping (confirmed against the in-game
+      // symbol picker):
+      //   mat 0 → X (cross)            — same as game
+      //   mat 1 → circle (hollow ring) — same as game
+      //   mat 2 → filled square        — same as game (PlaneGeometry
+      //                                  with MeshBasicMaterial, sized
+      //                                  slightly smaller than the
+      //                                  outline markers so its filled
+      //                                  weight stays balanced).
+      //
+      // Marker size used to be Math.max(45, mapW * 0.003) which made
+      // the X arms span 300+ m at typical zoom — busy plots looked
+      // like a stack of parallel hairlines. Halved.
+      //
+      // Label gated on syncedTimeMode (stamped as `tm` in 1.9.26+):
+      //   tm 0 (None)      → no label
+      //   tm 1 (Timestamp) → "H:MM"
+      //   tm 2 (TimeCalc)  → "+H:MM" prefix marks computed deltas
+      const r = Math.max(25, mapW * 0.0015);
+      const mat = (typeof d.mat === "number") ? d.mat : 0;
+
+      if (mat === 1) {
+        // Circle (hollow ring). LineLoop so the path closes cleanly.
+        const segs = 32;
+        const pos = new Float32Array((segs + 1) * 3);
+        for (let i = 0; i <= segs; i++) {
+          const a = (i / segs) * Math.PI * 2;
+          pos[i * 3]     = d.x + r * Math.cos(a);
+          pos[i * 3 + 1] = Y;
+          pos[i * 3 + 2] = d.z + r * Math.sin(a);
+        }
         const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(buf, 3));
-        const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({
+        geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        const ring = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
           color: baseColHex, transparent: true, opacity: 0.7,
           depthWrite: false,
         }));
-        ln.renderOrder = -6;
-        addChartObj(ln);
+        ring.renderOrder = -6;
+        addChartObj(ring);
+      } else if (mat === 2) {
+        // Filled square — represents the in-game solid black-square
+        // symbol. PlaneGeometry rotated to lie flat on the chart
+        // plane (XY → XZ). DoubleSide so it stays visible from any
+        // 3-D camera angle. Slightly smaller than the X (1.6× r as
+        // a side, vs the X's 2× r diagonal span) so the filled
+        // weight doesn't dominate next to outline markers.
+        const side = r * 1.6;
+        const sq = new THREE.PlaneGeometry(side, side);
+        sq.rotateX(-Math.PI * 0.5);
+        sq.translate(d.x, Y, d.z);
+        const m = new THREE.Mesh(sq, new THREE.MeshBasicMaterial({
+          color: baseColHex, transparent: true, opacity: 0.7,
+          depthWrite: false, side: THREE.DoubleSide,
+        }));
+        m.renderOrder = -6;
+        addChartObj(m);
+      } else {
+        // Default mat 0 → X cross, drawn as two line segments.
+        const segs = [
+          [d.x - r, d.z - r, d.x + r, d.z + r],
+          [d.x - r, d.z + r, d.x + r, d.z - r],
+        ];
+        for (const [x1, z1, x2, z2] of segs) {
+          const buf = new Float32Array([x1, Y, z1, x2, Y, z2]);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(buf, 3));
+          const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({
+            color: baseColHex, transparent: true, opacity: 0.7,
+            depthWrite: false,
+          }));
+          ln.renderOrder = -6;
+          addChartObj(ln);
+        }
+      }
+      // Default to Timestamp behaviour for pre-1.9.26 recordings
+      // (no tm field) so existing replays still show H:MM. New
+      // recordings honour the explicit tm value.
+      const tm = (typeof d.tm === "number") ? d.tm : 1;
+      const haveHMS = (typeof d.h === "number" || typeof d.m === "number" || typeof d.s === "number");
+      if (tm > 0 && haveHMS) {
+        const h = (d.h | 0).toString();
+        const m = (d.m | 0).toString().padStart(2, "0");
+        const lbl = (tm === 2 ? "+" : "") + h + ":" + m;
+        const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: makeTextSprite(lbl, baseCol),
+          transparent: true, opacity: 0.85,
+          depthWrite: false, depthTest: false,
+        }));
+        const sp = Math.max(180, mapW * 0.022);
+        spr.scale.set(sp, sp * 128 / 512, 1);
+        spr.position.set(d.x + r * 1.3, Y + 0.05, d.z - r * 0.7);
+        spr.renderOrder = 5;
+        addChartObj(spr);
       }
     }
     else {
@@ -4927,14 +5396,21 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
   if (!entry) {
     // Build lazily; only spend canvas allocs on ships that ever actually
     // change state during the recording.
-    entry = { alert: null, fire: null, flee: null, flood: null, wreck: null };
+    entry = { alert: null, softAlert: null, fire: null, flee: null, flood: null, wreck: null };
     boidIcons.set(id, entry);
   }
   // Wreck icon is only shown while the boid is sinking — clear it
   // here in case the boid is still alive (snap is current; flooding
   // is fine but the death marker has no business showing).
   if (entry.wreck) entry.wreck.visible = false;
-  const alerted = !!(snap && snap.al);
+  // Two alert levels in 1.9.30+ recordings:
+  //   al = 1 → hard alert (target acquired) → ❗ in saturated yellow
+  //   al = 2 → soft alert (investigating)   → ❓ in dim amber
+  // Pre-1.9.30 recordings only ever emit al=1; the truthy check still
+  // promotes them to hard so the icon stays unchanged on old data.
+  const alertLevel = (snap && typeof snap.al === "number") ? snap.al : 0;
+  const alerted    = alertLevel === 1;
+  const softAlert  = alertLevel === 2;
   const burning = !!(snap && snap.f);
   // Convoy-wide fleeing flag — only render on merchants (escorts
   // already carry per-ship alert), so the two indicators stay
@@ -4955,6 +5431,21 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
     pinSpriteToCamera(entry.alert, 60, 60);
   } else if (entry.alert) {
     entry.alert.visible = false;
+  }
+
+  // Soft alert — same slot/anchor as hard alert (they're mutually
+  // exclusive: an escort is either investigating OR engaging). Dim
+  // amber colour reads as "less urgent than the red-yellow !".
+  if (softAlert) {
+    if (!entry.softAlert) {
+      entry.softAlert = makeIconSprite(emojiTexture("❓", "#c98c2a"), 60);
+      scene3d.add(entry.softAlert);
+    }
+    entry.softAlert.position.set(meshPosition.x, Y_TOP + 105, meshPosition.z);
+    entry.softAlert.visible = true;
+    pinSpriteToCamera(entry.softAlert, 60, 60);
+  } else if (entry.softAlert) {
+    entry.softAlert.visible = false;
   }
 
   if (burning) {
@@ -5030,7 +5521,7 @@ function hideBoidAuxiliaries(id) {
 function showWreckIcon(id, meshPosition) {
   let entry = boidIcons.get(id);
   if (!entry) {
-    entry = { alert: null, fire: null, flee: null, flood: null, wreck: null };
+    entry = { alert: null, softAlert: null, fire: null, flee: null, flood: null, wreck: null };
     boidIcons.set(id, entry);
   }
   if (!entry.wreck) {
@@ -5246,13 +5737,154 @@ function updateSearchLight(id, kind, snap, mesh, yaw) {
   }
   sl.visible = true;
   sl.position.set(mesh.position.x, stretchY(0) + 2, mesh.position.z);
-  // Slow sweep ±20° at ~0.6 Hz; phase per-boid so a convoy doesn't sweep in lockstep.
-  const sweep = 0.35 * Math.sin(performance.now() * 0.004 + (mesh.position.x % 13));
-  sl.rotation.y = yaw + sweep;
+  // Steady forward — no sweep. User feedback (2026-05-25): the ±20°
+  // sin-sweep made alerted hulls strobe distractingly on a busy map.
+  // Point the cone bow-forward and leave it there.
+  sl.rotation.y = yaw;
 }
 function disposeSearchLight(id) {
   const sl = searchLights.get(id);
   if (sl) { scene3d.remove(sl); sl.material.dispose(); searchLights.delete(id); }
+}
+
+// ── Convoy ship static searchbeams ────────────────────────────────────
+// Two cones per convoy ship (merchants AND escorts), pointed in two
+// per-ship-randomised-but-stable directions. Only visible when both
+// conditions are true:
+//   1. Game-time hour is in the night window (< 6 or ≥ 19)
+//   2. The ship has any detection signal (snap.al ≥ 1)
+// Coexists with the per-escort forward search-light; this is the
+// "ship has the lights on" indicator distinct from the engagement cone.
+const _BEAM_GEO = (() => {
+  const g = new THREE.ConeGeometry(140, 1600, 16, 1, true);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0, 800);
+  return g;
+})();
+// Deterministic per-id hash → integer in [0, 360). Same id always
+// returns the same angle so the beams don't strobe across frames.
+function _hashAngle(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  }
+  return ((h >>> 0) % 360);
+}
+function _convoyBeamAngles(id) {
+  const a = _hashAngle(id + "/a");
+  let   b = _hashAngle(id + "/b");
+  // Force ≥ 60° spread so the two cones are visually distinct rather
+  // than overlapping. Bias b away from a until the gap is comfortable.
+  const minGap = 60;
+  const diff = Math.min((b - a + 360) % 360, (a - b + 360) % 360);
+  if (diff < minGap) b = (a + 180 + (b % 60)) % 360;
+  return [a, b];
+}
+// Returns true when the playback's current game-time hour is in the
+// night window. Uses the same gameTimeStartHours + currentT formula
+// the on-screen clock uses, so the beams light/extinguish in sync
+// with the timestamp the user reads in the bottom-left.
+function _isGameNight() {
+  if (!data || data.gameTimeStartHours == null) return false;
+  const k = gameTimeRate();
+  const anchorSec  = (data._uboatT0 || 0) + currentT;
+  const hoursTotal = data.gameTimeStartHours + k * anchorSec / 3600;
+  const h = ((hoursTotal % 24) + 24) % 24;
+  return (h < 6) || (h >= 19);
+}
+function updateConvoyBeams(id, kind, snap, mesh) {
+  // Convoy ships only — merchants ("m") and escorts ("e"). Anything
+  // else (u-boats, torpedoes, depth charges) is skipped.
+  const isConvoy = (kind === "m" || kind === "e");
+  const wantBeams = isConvoy && snap && snap.al >= 1 && _isGameNight();
+  let pair = convoyBeams.get(id);
+  if (!wantBeams) {
+    if (pair) { pair[0].visible = false; pair[1].visible = false; }
+    return;
+  }
+  if (!pair) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xfff3b0, transparent: true, opacity: 0.13,
+      depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    const c1 = new THREE.Mesh(_BEAM_GEO, mat);
+    const c2 = new THREE.Mesh(_BEAM_GEO, mat);
+    c1.renderOrder = 25; c2.renderOrder = 25;
+    c1.frustumCulled = false; c2.frustumCulled = false;
+    scene3d.add(c1); scene3d.add(c2);
+    pair = [c1, c2];
+    pair.angles = _convoyBeamAngles(id);
+    convoyBeams.set(id, pair);
+  }
+  const [a, b] = pair.angles;
+  pair[0].position.set(mesh.position.x, stretchY(0) + 2, mesh.position.z);
+  pair[1].position.set(mesh.position.x, stretchY(0) + 2, mesh.position.z);
+  pair[0].rotation.y = (a * Math.PI) / 180;
+  pair[1].rotation.y = (b * Math.PI) / 180;
+  pair[0].visible = true;
+  pair[1].visible = true;
+}
+function disposeConvoyBeams(id) {
+  const pair = convoyBeams.get(id);
+  if (pair) {
+    scene3d.remove(pair[0]); scene3d.remove(pair[1]);
+    // Shared geometry (_BEAM_GEO) — don't dispose. Material is shared
+    // between the two cones; dispose once.
+    pair[0].material.dispose();
+    convoyBeams.delete(id);
+  }
+}
+
+// ── Heading rays for escorts ──────────────────────────────────────────
+// Long red line projected forward from each escort's bow along its
+// current yaw. Toggled by trailToggles.headingRays in the Trails panel.
+// Length is fixed (~8 km world units) so it reads as a direction
+// indicator regardless of speed — interpretation is "where this escort
+// is pointed", not an ETA marker.
+const _HEADING_RAY_LEN = 8000;
+function updateEscortHeadingRay(id, kind, snap, mesh, yaw) {
+  const wantRay = kind === "e" && trailToggles.headingRays && snap;
+  let ray = escortHeadingRays.get(id);
+  if (!wantRay) { if (ray) ray.visible = false; return; }
+  if (!ray) {
+    const geo = new THREE.BufferGeometry();
+    // Two vertices — start at the hull (0,0,0) in local space, end at
+    // (0,0,L). The mesh's rotation.y carries the yaw so this stays
+    // pointed bow-forward without per-frame position rewrites.
+    const buf = new Float32Array([0, 0, 0,  0, 0, _HEADING_RAY_LEN]);
+    geo.setAttribute("position", new THREE.BufferAttribute(buf, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xef4444, transparent: true, opacity: 0.55,
+      depthWrite: false,
+    });
+    ray = new THREE.Line(geo, mat);
+    ray.renderOrder = 24;   // above water/grid, below labels
+    ray.frustumCulled = false;
+    escortHeadingRays.set(id, ray);
+    scene3d.add(ray);
+  }
+  ray.visible = true;
+  ray.position.set(mesh.position.x, stretchY(0) + 1, mesh.position.z);
+  // If the escort is actively engaged, the recorder (1.9.29+) stamps
+  // snap.tb with the bearing from the escort to its interceptPosition
+  // — the point the AI is steering toward to find the target. Use that
+  // bearing so the ray aims at the predicted intercept rather than the
+  // bow direction. Falls back to bow yaw when tb is absent.
+  if (typeof snap.tb === "number") {
+    ray.rotation.y = (snap.tb * Math.PI) / 180;
+  } else {
+    ray.rotation.y = yaw;
+  }
+}
+function disposeEscortHeadingRay(id) {
+  const ray = escortHeadingRays.get(id);
+  if (ray) {
+    scene3d.remove(ray);
+    ray.geometry.dispose();
+    ray.material.dispose();
+    escortHeadingRays.delete(id);
+  }
 }
 
 // Identify the ship class from its (already-prettified) name. Returns a
@@ -5713,6 +6345,373 @@ function meshForEntity(id, kind, snap) {
           group.add(m);
         }
       }
+
+      // Per-asset raised hull sections from MerchantShipStats.shape
+      // (MissionMap 1.9.18+ recordings only).
+      //
+      // These are the hull stepped up a few metres at the canonical
+      // forecastle / bridge-deck / poop positions. Three placement
+      // rules per the in-game Recognition Manual silhouettes:
+      //   fIsl (forecastle) — front face flush with bow tip,
+      //                        extends sternward by lenM.
+      //   mIsl (bridge)     — centred amidships.
+      //   bIsl (poop)       — rear face flush with stern tip,
+      //                        extends forward by lenM.
+      // All full-beam wide. Bow + stern islands use ExtrudeGeometry
+      // from a hand-built Shape so their forward / aft faces are
+      // rounded to match the hull's bow / stern curve — a plain
+      // BoxGeometry stuck out as a flat-walled brick where the hull
+      // tapered around it.
+      //
+      // Order of operations matters here: we BUILD the island
+      // geometries first, LIFT any class-typical deckhouses that
+      // fall over them, then ADD the island meshes to the group.
+      // Doing the lift before adding prevents the island meshes
+      // from being matched by their own z range and lifted as
+      // well — that bug had the deckhouses floating an island-
+      // height above where they should rest.
+      const islandZRanges = [];
+      const islandMeshes  = [];
+      if (meta && meta.shape) {
+        // Per-anchor max length. Mid islands (bridge deck) can be
+        // significantly longer than the fore / aft islands — real
+        // merchant ships often have a bridge deck spanning a third
+        // of the hull. Default user complaint: HF19's mid island
+        // was about half what it should be.
+        function maxLenFor(anchor) {
+          if (anchor === "mid") return Math.max(16, Math.min(60, len * 0.42));
+          return Math.max(12, Math.min(35, len * 0.22));
+        }
+        const islHeightM = Math.max(2.5, Math.min(4.5, beam * 0.18));
+        const halfL      = len * 0.5;
+        const halfBeam   = beam * 0.5;
+
+        // Bow length per class — must match silhouetteForClass so
+        // the forecastle's leading curve aligns with the hull bow
+        // exactly. Without this the forecastle had a flat front
+        // edge where the hull was already curving inward.
+        function bowLenFor(c) {
+          if (c === "tanker" || c === "freighter") return beam * 0.65;
+          if (c === "trawler" || c === "flower")   return beam * 0.55;
+          if (c === "bittern")                     return beam * 0.6;
+          if (c === "passenger")                   return beam * 0.95;
+          if (c === "tribal")                      return beam * 1.7;
+          if (kind === "e")                        return beam * 1.4;
+          return beam * 0.5;
+        }
+        const bowLen = bowLenFor(cls);
+
+        // Per-class bow / stern styles — must match silhouetteForClass
+        // so the island ends line up with the hull they sit on.
+        //   tanker     : rounded bow, TAPER stern
+        //   freighter  : rounded bow, square stern
+        //   trawler    : rounded bow, square stern
+        //   passenger  : fine bow,    cruiser stern
+        //   tribal     : pointed bow, square stern
+        //   flower     : rounded bow, cruiser stern
+        //   bittern    : rounded bow, cruiser stern
+        //   (default)  : rounded / pointed (per kind), square stern
+        function bowStyleFor(c) {
+          if (c === "passenger") return "fine";
+          if (c === "tribal")    return "pointed";
+          if (kind === "e" && c !== "flower" && c !== "bittern") return "pointed";
+          return "rounded";
+        }
+        function sternStyleFor(c) {
+          if (c === "tanker") return "taper";
+          if (c === "passenger" || c === "flower" || c === "bittern") return "cruiser";
+          return "square";
+        }
+        const bowStyle   = bowStyleFor(cls);
+        const sternStyle = sternStyleFor(cls);
+
+        // Build a Shape in the silhouette's X-Y plane (bow at +X,
+        // port-stbd along Y). After ExtrudeGeometry + the two
+        // rotations below this aligns with world +Z = bow.
+        function buildIslandShape(anchor, lenM) {
+          const s = new THREE.Shape();
+          if (anchor === "front") {
+            const aftX = halfL - lenM;
+            if (bowStyle === "pointed") {
+              // Triangle bow: shoulder ↘ tip ↗ shoulder.
+              const shX = halfL - Math.min(lenM * 0.6, halfBeam * 1.2);
+              s.moveTo(aftX, -halfBeam);
+              s.lineTo(shX,  -halfBeam);
+              s.lineTo(halfL, 0);
+              s.lineTo(shX,   halfBeam);
+              s.lineTo(aftX,  halfBeam);
+              s.closePath();
+            } else if (bowStyle === "fine") {
+              // Ogive curve approximated by four lineTo segments per
+              // side, matching the hull's fine-bow draw().
+              const bowLen = Math.min(lenM * 0.7, halfBeam * 1.1);
+              const bowSh  = halfL - bowLen;
+              const xs = [0.25, 0.50, 0.75, 0.95];
+              const ys = [0.85, 0.65, 0.40, 0.15];
+              s.moveTo(aftX, -halfBeam);
+              s.lineTo(bowSh, -halfBeam);
+              for (let i = 0; i < xs.length; i++)
+                s.lineTo(bowSh + bowLen * xs[i], -halfBeam * ys[i]);
+              s.lineTo(halfL, 0);
+              for (let i = xs.length - 1; i >= 0; i--)
+                s.lineTo(bowSh + bowLen * xs[i], halfBeam * ys[i]);
+              s.lineTo(bowSh,  halfBeam);
+              s.lineTo(aftX,   halfBeam);
+              s.closePath();
+            } else {
+              // Rounded bow: match the hull EXACTLY.
+              //   - noseR = min(halfBeam, bowLen)
+              //   - flat side from bow shoulder (bowSh) to arc start
+              //     (halfL - noseR). When bowLen > halfBeam this
+              //     section is non-zero (~beam*0.15 for tankers /
+              //     freighters) and the hull is visibly flat at that
+              //     stretch; matching it removes the discontinuity
+              //     the previous render had.
+              const noseR = Math.min(halfBeam, bowLen);
+              const bowSh = halfL - bowLen;
+              s.moveTo(aftX, -halfBeam);
+              s.lineTo(bowSh, -halfBeam);
+              s.lineTo(halfL - noseR, -halfBeam);
+              s.absarc(halfL - noseR, 0, noseR, -Math.PI * 0.5, Math.PI * 0.5, false);
+              s.lineTo(bowSh, halfBeam);
+              s.lineTo(aftX, halfBeam);
+              s.closePath();
+            }
+          } else if (anchor === "rear") {
+            const foreX = -halfL + lenM;
+            if (sternStyle === "taper") {
+              // Taper: hull narrows from full beam at sternSh down
+              // to ~55 % beam at the stern tip. Matches tanker hull.
+              const taperLen = Math.min(halfBeam * 0.3, lenM * 0.5);
+              const sternSh  = -halfL + taperLen;
+              s.moveTo(foreX, halfBeam);
+              s.lineTo(sternSh, halfBeam);
+              s.lineTo(-halfL, halfBeam * 0.55);
+              s.lineTo(-halfL, -halfBeam * 0.55);
+              s.lineTo(sternSh, -halfBeam);
+              s.lineTo(foreX, -halfBeam);
+              s.closePath();
+            } else if (sternStyle === "cruiser") {
+              // Cruiser: half-circle. Arc radius pinned to halfBeam
+              // so it lines up with the hull edges; lenM must be at
+              // least halfBeam for the geometry to close cleanly.
+              const sternR = halfBeam;
+              const arcCx  = -halfL + sternR;
+              const effForeX = Math.max(foreX, arcCx + 0.5);   // guard short poops
+              s.moveTo(effForeX, halfBeam);
+              s.lineTo(arcCx, halfBeam);
+              s.absarc(arcCx, 0, sternR, Math.PI * 0.5, Math.PI * 1.5, false);
+              s.lineTo(effForeX, -halfBeam);
+              s.closePath();
+            } else {
+              // Square stern: flat aft face.
+              s.moveTo(foreX, halfBeam);
+              s.lineTo(-halfL, halfBeam);
+              s.lineTo(-halfL, -halfBeam);
+              s.lineTo(foreX, -halfBeam);
+              s.closePath();
+            }
+          } else {
+            // Bridge deck: plain rectangle centred on the keel.
+            const half = lenM * 0.5;
+            s.moveTo(-half, -halfBeam);
+            s.lineTo( half, -halfBeam);
+            s.lineTo( half,  halfBeam);
+            s.lineTo(-half,  halfBeam);
+            s.closePath();
+          }
+          return s;
+        }
+
+        const slots = [
+          { v: meta.shape.fIsl, anchor: "front" },
+          { v: meta.shape.mIsl, anchor: "mid"   },
+          { v: meta.shape.bIsl, anchor: "rear"  },
+        ];
+        // Minimum island length — without this an asset with a small
+        // fIsl/mIsl/bIsl value (e.g. 0.1) produced an island a couple
+        // of metres long, smaller than the deckhouse meant to sit on
+        // it. Floor at 8 m or 15 % of hull length, whichever is
+        // smaller (so a tiny trawler doesn't get islands consuming
+        // 16 % of its hull).
+        const islMinLenM = Math.min(8, len * 0.15);
+
+        for (const i of slots) {
+          if (!(i.v > 0)) continue;
+          const islMax = maxLenFor(i.anchor);
+          let lenM = Math.max(islMinLenM, islMax * Math.min(1, i.v));
+          // A forecastle that's shorter than the hull's bow taper
+          // can't include the full bow curve and ends up as a flat-
+          // front rectangle behind the bow. Clamp to bowLen so the
+          // shape always reaches the bow shoulder.
+          if (i.anchor === "front" && lenM < bowLen) lenM = bowLen;
+          const shape = buildIslandShape(i.anchor, lenM);
+
+          // Compute the world-Z range this island occupies — used by
+          // the deckhouse-lift logic below to know which class
+          // superstructure boxes should sit ON TOP of an island
+          // rather than at deck level.
+          let zMin, zMax;
+          if (i.anchor === "front")      { zMax =  halfL;        zMin =  halfL - lenM; }
+          else if (i.anchor === "rear")  { zMin = -halfL;        zMax = -halfL + lenM; }
+          else                           { zMax =  lenM * 0.5;   zMin = -lenM * 0.5;   }
+          islandZRanges.push({ zMin, zMax, lift: islHeightM });
+
+          const geo = new THREE.ExtrudeGeometry(shape, {
+            depth: islHeightM,
+            bevelEnabled: false,
+            curveSegments: 12,
+          });
+          geo.rotateX(-Math.PI * 0.5);   // extrude axis +Z → world +Y
+          geo.rotateY(-Math.PI * 0.5);   // shape +X → world +Z
+          geo.translate(0, hullFreeboard, 0);
+          // Deferred add — see the lift loop below for why.
+          islandMeshes.push(new THREE.Mesh(geo, mat));
+        }
+      }
+
+      // Class-typical deckhouses vs per-asset islands.
+      //
+      // silhouetteForClass places generic bridge / engine-room
+      // deckhouses at hardcoded z offsets per ship class. The
+      // per-asset shape data places islands at the actual raised-
+      // hull positions for THIS ship. The two don't always agree.
+      //
+      // Strategy: for each class deckhouse, find the NEAREST island
+      // and snap to it (centre on the island, lift onto its deck)
+      // as long as it's within tolerance. Tolerance scales with
+      // hull length so a 200 m liner gives more slack than a 60 m
+      // trawler. When no island is within tolerance the deckhouse
+      // stays at main-deck level — that's a ship whose bridge
+      // really does sit on the open deck (HF8 / MT17 etc).
+      //
+      // Two final rules:
+      //   - If MORE class deckhouses than islands and at least
+      //     one snapped, surplus orphans get removed (HT33's
+      //     phantom mid bridge case: tanker class has bridge AND
+      //     engine, asset has only a poop → bridge removed,
+      //     engine snapped to poop).
+      //   - If NO class deckhouses snapped, keep everything at
+      //     deck level (PL4 / MT2: asset has zero or wildly
+      //     mis-positioned islands, but the class structures are
+      //     still the ship's superstructure).
+      //
+      // Masts tagged userData.isMast and skipped throughout — they
+      // belong on the main deck between islands, never on top.
+      if (hasSuper && meta && meta.shape) {
+        const tol = Math.max(beam * 1.5, len * 0.18);
+        const houses = [];
+        for (const child of group.children) {
+          if (child.userData && child.userData.isMast) continue;
+          if (!(child.geometry && child.geometry.attributes)) continue;
+          child.geometry.computeBoundingBox();
+          const bb = child.geometry.boundingBox;
+          if (!bb) continue;
+          const cy = (bb.min.y + bb.max.y) * 0.5;
+          if (bb.max.z - bb.min.z > len * 0.6) continue;
+          if (cy < hullFreeboard * 0.5) continue;
+          houses.push({ child, cz: (bb.min.z + bb.max.z) * 0.5 });
+        }
+        // Pair each deckhouse with its nearest island within
+        // tolerance. Islands can host more than one deckhouse —
+        // tanker class often has bridge + engine that both snap
+        // to the same aft island when the asset only has bIsl.
+        const matched   = [];
+        const unmatched = [];
+        for (const h of houses) {
+          let best = null, bestDist = Infinity;
+          for (const r of islandZRanges) {
+            const islCenter = (r.zMin + r.zMax) * 0.5;
+            const d = Math.abs(h.cz - islCenter);
+            if (d < bestDist) { bestDist = d; best = r; }
+          }
+          if (best && bestDist <= tol) matched.push({ h, island: best });
+          else                          unmatched.push(h);
+        }
+        for (const m of matched) {
+          const islCenter = (m.island.zMin + m.island.zMax) * 0.5;
+          m.h.child.position.y += m.island.lift;
+          m.h.child.position.z += (islCenter - m.h.cz);   // centre on island
+        }
+        // If multiple deckhouses snap to the same island, deduplicate
+        // — keep only the nearest one. The rest are surplus class
+        // boxes that would stack/clip on top of each other.
+        const perIsland = new Map();
+        for (const m of matched) {
+          const key = m.island;
+          const prev = perIsland.get(key);
+          const myDist = Math.abs(((m.island.zMin + m.island.zMax) * 0.5) - m.h.cz);
+          if (!prev || myDist < prev.dist) {
+            if (prev) group.remove(prev.h.child);
+            perIsland.set(key, { h: m.h, dist: myDist });
+          } else {
+            group.remove(m.h.child);
+          }
+        }
+        // Drop unmatched orphans only if at least one deckhouse
+        // snapped. With zero snaps the unmatched set IS the entire
+        // superstructure and we shouldn't strip it.
+        if (matched.length > 0) {
+          for (const o of unmatched) group.remove(o.child);
+        }
+      }
+
+      // Now add the per-asset island meshes — after the lift loop
+      // has finished so they aren't candidates for being lifted.
+      for (const m of islandMeshes) group.add(m);
+
+      // Funnel — single dark cylinder on the engine island.
+      //   eng = 1 (Amidship) → on the mid island (closest island to
+      //                         z = 0)
+      //   eng = 2 (Aft)      → on the back island (most-negative z)
+      // Rises out of the deckhouse on the island and is the clearest
+      // single visual cue distinguishing a steamer's bridge area. We
+      // intentionally skip the 'f' char in the masts string for 3-D
+      // (handled here) — the funnel is conceptually one object on
+      // the deckhouse, not one of N evenly-distributed deck
+      // structures.
+      if (meta && meta.shape && (meta.shape.eng === 1 || meta.shape.eng === 2)
+          && islandZRanges.length > 0) {
+        let pick = null;
+        if (meta.shape.eng === 1) {
+          // Closest island to midship
+          let best = Infinity;
+          for (const r of islandZRanges) {
+            const c = Math.abs((r.zMin + r.zMax) * 0.5);
+            if (c < best) { best = c; pick = r; }
+          }
+        } else {
+          // Most-aft island (smallest z center)
+          let best = Infinity;
+          for (const r of islandZRanges) {
+            const c = (r.zMin + r.zMax) * 0.5;
+            if (c < best) { best = c; pick = r; }
+          }
+        }
+        if (pick) {
+          const funnelZ      = (pick.zMin + pick.zMax) * 0.5;
+          const funnelR      = Math.max(0.7, beam * 0.06);
+          // Tall funnel — visible against deckhouse. ~45 % of
+          // freeboard puts the top well above the deckhouse roof.
+          const funnelH      = Math.max(4, freeboardFull * 0.45);
+          // Bottom sits on the deckhouse roof: island top + a
+          // typical deckhouse height. (Real deckhouses are 4-6 m;
+          // we use the upper end so the funnel rises clearly above
+          // the bridge box.)
+          const deckhouseTop = hullFreeboard + pick.lift + Math.max(3, beam * 0.25);
+          const funnelGeo    = new THREE.CylinderGeometry(funnelR, funnelR * 1.05, funnelH, 14);
+          funnelGeo.translate(0, deckhouseTop + funnelH * 0.5, funnelZ);
+          // Distinct dark material — smoke-stained funnel
+          // contrasts with the hull tint.
+          const funnelMat = new THREE.MeshLambertMaterial({ color: 0x2d2d2d });
+          const funnel = new THREE.Mesh(funnelGeo, funnelMat);
+          funnel.renderOrder = 50;
+          // Tagged isMast so the lift/cleanup loops don't touch it.
+          funnel.userData.isMast = true;
+          group.add(funnel);
+        }
+      }
+
       // Mast: thin vertical cylinder from the hull deck up to the
       // full recorded freeboard. Stands in for "the part of the
       // ship's height that's actually mast / king-post / funnel
@@ -5725,24 +6724,78 @@ function meshForEntity(id, kind, snap) {
         // bow direction (+X in shape space) maps to world +Z, so positive
         // mastZ pushes the mast forward toward the bow.
         //
-        // Cargo freighters get fore + main masts bracketing the bridge —
-        // the recognition-manual silhouette has two tall masts at ~30 %
-        // of length from each end (kingpost / cargo-derrick rigs), and
-        // that's the freighter's clearest profile cue. Tankers, tribals
-        // and other classes keep a single forward mast; passenger liners
-        // get a single centre mast / funnel.
-        const mastZs = (cls === "freighter")
-          ? [ len * 0.30, -len * 0.25 ]
-          : (cls === "passenger") ? [ 0 ]
-          : [ len * 0.30 ];
-        for (const mastZ of mastZs) {
-          const mastGeo = new THREE.CylinderGeometry(mastR, mastR, mastHeight, 6);
-          // Bottom of the cylinder sits on the deck; centre at
-          // deckY + mastHeight/2 = hullFreeboard + mastHeight/2.
-          mastGeo.translate(0, hullFreeboard + mastHeight / 2, mastZ);
-          const mast = new THREE.Mesh(mastGeo, mat);
-          mast.renderOrder = 50;
-          group.add(mast);
+        // Per-asset path (1.9.19+ recordings): parse the masts string,
+        // which is a bow→stern sequence of m / k / f chars. Each m is
+        // a slim pole mast, each k is a stout kingpost (cargo-derrick
+        // support). f is the funnel — skipped here because the funnel
+        // is part of the aft / mid deckhouse rendered as a class
+        // superstructure box and would duplicate it.
+        //
+        // Fallback (no meta.shape): the class-typical fixed positions
+        // from earlier — two masts for cargo freighters, one centre
+        // mast for passenger, one forward mast for everything else.
+        const mastSpecs = [];
+        const mastsStr  = (meta && meta.shape && typeof meta.shape.masts === "string")
+          ? meta.shape.masts.toLowerCase() : "";
+        if (mastsStr.length > 0) {
+          // Place each char at evenly-spaced positions along the
+          // placeable deck. Matches the 2-D viewer's deckX() so the
+          // top-down and 3-D positions agree.
+          const deckStart =  len * 0.30;
+          const deckEnd   = -len * 0.50;
+          const n = mastsStr.length;
+          for (let i = 0; i < n; i++) {
+            const c = mastsStr[i];
+            if (c === "f") continue;          // funnel handled by deckhouse
+            const frac = (i + 1) / (n + 1);
+            const z    = deckStart + (deckEnd - deckStart) * frac;
+            mastSpecs.push({ z, kind: c });
+          }
+        } else {
+          const mastZs = (cls === "freighter")
+            ? [ len * 0.30, -len * 0.25 ]
+            : (cls === "passenger") ? [ 0 ]
+            : [ len * 0.30 ];
+          for (const z of mastZs) mastSpecs.push({ z, kind: "m" });
+        }
+        for (const spec of mastSpecs) {
+          if (spec.kind === "k") {
+            // Kingpost = TWO vertical posts joined by a horizontal
+            // crossbar near the top. Real-world kingposts support
+            // cargo-derrick booms from a pair of posts straddling
+            // the cargo hatch. Render: two thin cylinders offset
+            // port + stbd, plus a thin box bar between them at
+            // ~70 % of mast height.
+            const postR  = Math.max(0.25, mastR * 0.65);
+            const postSep = Math.min(beam * 0.5, Math.max(2.5, beam * 0.22));
+            const barY   = hullFreeboard + mastHeight * 0.7;
+            const barH   = Math.max(0.4, mastR * 1.2);
+            const barL   = postSep;       // beam direction
+            const postY  = hullFreeboard + mastHeight * 0.5;
+            // Port post
+            const pGeo1 = new THREE.CylinderGeometry(postR, postR, mastHeight, 6);
+            pGeo1.translate(-postSep * 0.5, postY, spec.z);
+            const p1 = new THREE.Mesh(pGeo1, mat); p1.renderOrder = 50;
+            p1.userData.isMast = true; group.add(p1);
+            // Starboard post
+            const pGeo2 = new THREE.CylinderGeometry(postR, postR, mastHeight, 6);
+            pGeo2.translate(postSep * 0.5, postY, spec.z);
+            const p2 = new THREE.Mesh(pGeo2, mat); p2.renderOrder = 50;
+            p2.userData.isMast = true; group.add(p2);
+            // Crossbar — short box spanning between the posts.
+            const bGeo = new THREE.BoxGeometry(barL, barH, postR * 1.6);
+            bGeo.translate(0, barY, spec.z);
+            const b = new THREE.Mesh(bGeo, mat); b.renderOrder = 50;
+            b.userData.isMast = true; group.add(b);
+          } else {
+            // Plain pole mast — single thin cylinder.
+            const mastGeo = new THREE.CylinderGeometry(mastR, mastR, mastHeight, 6);
+            mastGeo.translate(0, hullFreeboard + mastHeight / 2, spec.z);
+            const mast = new THREE.Mesh(mastGeo, mat);
+            mast.renderOrder = 50;
+            mast.userData.isMast = true;
+            group.add(mast);
+          }
         }
       }
       mesh = group;
@@ -6133,6 +7186,17 @@ function update3D() {
     // Search-light cone for boids that have acquired a target.
     if (tr.kind === "m" || tr.kind === "e") {
       updateSearchLight(id, tr.kind, snap, mesh, yaw);
+      updateConvoyBeams(id, tr.kind, snap, mesh);
+    }
+    // Forward heading ray — escorts only, gated by the Trails panel
+    // toggle. Suppressed for sinking hulls (no point projecting course
+    // off a wreck). updateEscortHeadingRay handles the toggle-off /
+    // wrong-kind cases internally.
+    if (tr.kind === "e" && !sinkState) {
+      updateEscortHeadingRay(id, tr.kind, snap, mesh, yaw);
+    } else if (tr.kind === "e") {
+      const r = escortHeadingRays.get(id);
+      if (r) r.visible = false;
     }
     seen.add(id);
   }
@@ -6143,6 +7207,8 @@ function update3D() {
     if (!seen.has(id)) {
       disposeWake(id);
       disposeSearchLight(id);
+      disposeEscortHeadingRay(id);
+      disposeConvoyBeams(id);
       scene3d.remove(mesh);
       sceneMeshes.delete(id);
       const lbl = labelSprites.get(id);
@@ -6167,9 +7233,10 @@ function update3D() {
       }
       const bi = boidIcons.get(id);
       if (bi) {
-        if (bi.alert) { scene3d.remove(bi.alert); bi.alert.material.map.dispose(); bi.alert.material.dispose(); }
-        if (bi.fire)  { scene3d.remove(bi.fire);  bi.fire.material.map.dispose();  bi.fire.material.dispose();  }
-        if (bi.flee)  { scene3d.remove(bi.flee);  bi.flee.material.map.dispose();  bi.flee.material.dispose();  }
+        if (bi.alert)     { scene3d.remove(bi.alert);     bi.alert.material.map.dispose();     bi.alert.material.dispose(); }
+        if (bi.softAlert) { scene3d.remove(bi.softAlert); bi.softAlert.material.map.dispose(); bi.softAlert.material.dispose(); }
+        if (bi.fire)      { scene3d.remove(bi.fire);      bi.fire.material.map.dispose();      bi.fire.material.dispose();  }
+        if (bi.flee)      { scene3d.remove(bi.flee);      bi.flee.material.map.dispose();      bi.flee.material.dispose();  }
         boidIcons.delete(id);
       }
       const hb = hpBars.get(id);
@@ -6864,9 +7931,13 @@ loadData = function(json) {
     for (const [k,  p]    of damagePopups)  { scene3d.remove(p.sprite); p.sprite.material.map.dispose(); p.sprite.material.dispose(); }
     for (const [id, w]    of wakeMeshes)    { scene3d.remove(w); w.material.dispose(); }
     for (const [id, sl]   of searchLights)  { scene3d.remove(sl); sl.material.dispose(); }
+    for (const [id, r]    of escortHeadingRays) { scene3d.remove(r); r.geometry.dispose(); r.material.dispose(); }
+    for (const [id, pair] of convoyBeams)   { scene3d.remove(pair[0]); scene3d.remove(pair[1]); pair[0].material.dispose(); }
   }
   wakeMeshes.clear();
   searchLights.clear();
+  escortHeadingRays.clear();
+  convoyBeams.clear();
   sceneMeshes.clear();
   // Invalidate per-frame caches keyed on currentT so a stale value from
   // the previous JSON can't carry over when the new recording happens
@@ -7212,7 +8283,7 @@ function rebuildUboatStats() {
 // uboatList (uboatTrailVisible[] below); uboatFull stays here as the
 // always-on full-track behaviour since the per-boat toggle drops the
 // 10-km tail-cap concept.
-const trailToggles = { uboatFull: true, convoy: false, escort: false };
+const trailToggles = { uboatFull: true, convoy: false, escort: false, headingRays: false };
 function _wireTrailToggle(id, key) {
   const el = $(id);
   if (!el) return;
@@ -7226,6 +8297,7 @@ function _wireTrailToggle(id, key) {
 }
 _wireTrailToggle("trailConvoyOn",  "convoy");
 _wireTrailToggle("trailEscortOn",  "escort");
+_wireTrailToggle("escortHeadingRaysOn", "headingRays");
 
 // Per-u-boat visibility state, indexed by crew index (0..3). Drive the
 // View / Trail / Nav toggles on each uboatList row. All persisted to
