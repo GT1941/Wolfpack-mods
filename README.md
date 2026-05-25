@@ -10,13 +10,15 @@ Records every entity's position over the course of a mission and ships with a fu
 
 **Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
 - U-boats sampled every 1 s (drops to 0.25 s during dives so under-keel tracks transitions): position, depth, speed, heading, HP, battery, under-keel clearance.
-- Convoy ships every 15 s: position, heading, physical speed, ship-type name, HP, alerted/burning flags.
+- Convoy ships every 15 s: position, heading, physical speed, ship-type name, HP, two-level alert flag (hard = target acquired, soft = investigating without target), target bearing on hard-alerted escorts, burning flag.
 - Torpedoes and depth charges per tick whenever they're in flight (torpedo depth included).
+- Seafloor depth markers tagged with a coarse / fine level so the viewer can replicate the in-game zoom-based LOD swap.
 - Events: torpedo launch (with TDC range, set speed in kn, gyro, depth, type, magnetic flag, owner, tube), torpedo hit (with tube + server-synced time), ship sunk (name + tonnage), depth-charge fire/impact, gun fire/land, collisions, bottom hits, u-boat lost.
+- Crew chart drawings (lines, circles, time-nodes, text annotations) with per-boat ownership.
 - Mission settings, crew roster snapshots, and player connect/disconnect events.
 - Top-level: ISO-8601 timestamp with timezone offset, in-game date, game-time anchor + measured game-time rate.
 
-A 3D replay viewer is included at [`web/missionmap.html`](web/missionmap.html) — drop a mission JSON onto it. Three.js scene with to-scale hulls, a hierarchical Kriegsmarine naval grid that subdivides as you zoom, seafloor depth markers, per-U-boat chart-drawing toggles, multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system.
+A 3D replay viewer is included at [`web/missionmap.html`](web/missionmap.html) — drop a mission JSON onto it. Three.js scene with to-scale hulls, a hierarchical Kriegsmarine naval grid that subdivides as you zoom, seafloor depth markers with zoom-based LOD, per-U-boat chart-drawing toggles, multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system. Escorts carry alert glyphs (❗ when engaging, ❓ when investigating) and an optional 8 km red "heading ray" that aims at the AI's predicted intercept point when hunting. Convoy ships sprout two static searchbeams each at night when alerted.
 
 **Discord auto-post (experimental):** there is an initial attempt at automatically posting the finished mission JSON (plus an optional summary, roster, and settings) to a Discord channel via webhook. It's off by default and configured entirely through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it. Treat it as a work in progress.
 
