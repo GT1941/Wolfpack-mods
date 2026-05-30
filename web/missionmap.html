@@ -625,6 +625,7 @@
             <label class="toggle"><input type="checkbox" id="trailConvoyOn"> Convoy (merchants)</label>
             <label class="toggle"><input type="checkbox" id="trailEscortOn"> Escorts</label>
             <label class="toggle" title="Project a long red ray forward from every escort along its current heading. Helps predict where each escort is steering. Surface escorts only — sunk hulls and merchants are unaffected."><input type="checkbox" id="escortHeadingRaysOn"> Escort heading rays</label>
+            <label class="toggle" title="Show airborne illumination rounds (starshells) — convoy-AI flares and player deck-gun illumination. Turn off to declutter the sky during a flare-heavy engagement or celebration."><input type="checkbox" id="flaresOn" checked> Flares (starshells)</label>
             <div style="color:var(--dim); font-size:11px; padding-top:4px; line-height:1.4;">
               U-boat trails toggle per-boat from the right-side U-boat list.
             </div>
@@ -7019,6 +7020,9 @@ function update3D() {
         mesh.visible = true;
       }
     }
+    // Flares (starshells) toggle from the Trails panel: hide the flare
+    // sphere entirely when off.
+    if (tr.kind === "f" && !trailToggles.flares) { mesh.visible = false; continue; }
     // Position: world X/Z map directly. Y comes from snap.d (uboats) or
     // snap.y (depth charges have world-Y, no separate depth). Uboats are
     // clamped to [Y_FLOOR, Y_TOP] so a noisy reading can't shoot the mesh
@@ -8283,7 +8287,7 @@ function rebuildUboatStats() {
 // uboatList (uboatTrailVisible[] below); uboatFull stays here as the
 // always-on full-track behaviour since the per-boat toggle drops the
 // 10-km tail-cap concept.
-const trailToggles = { uboatFull: true, convoy: false, escort: false, headingRays: false };
+const trailToggles = { uboatFull: true, convoy: false, escort: false, headingRays: false, flares: true };
 function _wireTrailToggle(id, key) {
   const el = $(id);
   if (!el) return;
@@ -8298,6 +8302,7 @@ function _wireTrailToggle(id, key) {
 _wireTrailToggle("trailConvoyOn",  "convoy");
 _wireTrailToggle("trailEscortOn",  "escort");
 _wireTrailToggle("escortHeadingRaysOn", "headingRays");
+_wireTrailToggle("flaresOn", "flares");
 
 // Per-u-boat visibility state, indexed by crew index (0..3). Drive the
 // View / Trail / Nav toggles on each uboatList row. All persisted to
