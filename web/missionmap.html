@@ -4737,7 +4737,7 @@ function clampSpriteWidthToEntity(spr, hullLen) {
 // Effective hull length of a u-boat mesh in world units — matches the
 // LatheGeometry profile in meshForEntity (kind === "u"). Updated here
 // whenever that geometry changes so the label cap tracks the actual hull.
-const UBOAT_HULL_LEN = 96;
+const UBOAT_HULL_LEN = 67.1;   // Type VIIC length (U-96 and the others)
 
 // Render a single line of text into a CanvasTexture sprite. Used for the
 // "<ship> sank here" overlays — kept lightweight (one canvas per event)
@@ -5098,9 +5098,16 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     else                 hpColor = "#4ade80";
   }
 
+  // Ballast (MissionMap 1.9.33+): fwd/aft tank water fill (0..1) + vent-open
+  // flags. Absent in older recordings → the tank graphic is simply skipped.
+  const bf = snap.bf, ba = snap.ba;
+  const vf = snap.vf ? 1 : 0, va = snap.va ? 1 : 0;
+  const hasBallast = (bf != null || ba != null);
+
   const key = name + "|" + speed + "|" + sArrow + "|" + depth + "|" + dArrow + "|" + bat + "|" + hp + "|" +
               labelColor + "|" + speedColor + "|" + sArrowColor + "|" + depthColor + "|" + dArrowColor + "|" +
-              batColor + "|" + hpColor;
+              batColor + "|" + hpColor + "|" +
+              (hasBallast ? ((bf || 0).toFixed(2) + "," + (ba || 0).toFixed(2) + "," + vf + va) : "");
 
   let entry = labelSprites.get(id);
   if (!entry) {
@@ -5175,6 +5182,37 @@ function updateUboatLabel3D(id, snap, meshPosition) {
     }
     if (bat) paint("  ⚡" + bat, batColor);
     if (hp) paint("  ♥" + hp, hpColor);
+
+    // Ballast tanks: a small FWD + AFT tank drawn next to the name. Each fills
+    // bottom-up with water (blue), and its outline goes RED while that tank's
+    // vent is open (flooding to dive).
+    if (hasBallast) {
+      x += 18;
+      const H = entry.canvas.height;
+      const drawTank = (lab, fill, open) => {
+        const tw = 44, th = 86, ty = (H - th) / 2;
+        c2d.fillStyle = "rgba(15,22,34,0.6)";
+        c2d.fillRect(x, ty, tw, th);
+        const f = Math.max(0, Math.min(1, fill == null ? 0 : fill));
+        if (f > 0) {
+          const fh = (th - 8) * f;
+          c2d.fillStyle = open ? "#3aa0ff" : "#2f6fb0";
+          c2d.fillRect(x + 4, ty + th - 4 - fh, tw - 8, fh);
+        }
+        c2d.lineWidth = 5;
+        c2d.strokeStyle = open ? "#ff4d4d" : "rgba(225,225,225,0.85)";
+        c2d.strokeRect(x + 2, ty + 2, tw - 4, th - 4);
+        c2d.font = "bold 30px ui-monospace,Consolas,monospace";
+        c2d.textAlign = "center"; c2d.textBaseline = "middle";
+        c2d.lineWidth = 5; c2d.strokeStyle = "rgba(0,0,0,0.85)";
+        c2d.strokeText(lab, x + tw / 2, ty + th / 2);
+        c2d.fillStyle = "#ffffff"; c2d.fillText(lab, x + tw / 2, ty + th / 2);
+        x += tw + 8;
+      };
+      drawTank("F", bf, vf);
+      drawTank("A", ba, va);
+      c2d.textAlign = "left"; c2d.textBaseline = "middle";   // restore for next rasterise
+    }
     entry.texture.needsUpdate = true;
     entry.lastKey = key;
   }
@@ -5517,6 +5555,11 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
 function hideBoidAuxiliaries(id) {
   const lbl = boidLabels.get(id);
   if (lbl && lbl.sprite) lbl.sprite.visible = false;
+  // HP bar must hide on sink too — otherwise the health bar lingers over the
+  // wreck. (updateHpBar3D is skipped while sinkState is active, so once hidden
+  // here it stays hidden until you scrub back before the sinking.)
+  const hp = hpBars.get(id);
+  if (hp && hp.sprite) hp.sprite.visible = false;
   const ic = boidIcons.get(id);
   if (ic) {
     if (ic.alert) ic.alert.visible = false;
@@ -6123,8 +6166,8 @@ function meshForEntity(id, kind, snap) {
     // build a solid of revolution, then rotated 90° so the long axis is
     // +Z. The profile gives a longer/sharper stern taper than bow (matches
     // U-boat shape — the propeller cone is longer than the bow).
-    const halfLen = 48;          // total hull length ~96 m, comparable to the old capsule
-    const beamR   = 6;           // max radius — slimmer than the old r=8 capsule
+    const halfLen = 33.55;       // total hull length 67.1 m (Type VIIC — U-96 et al.)
+    const beamR   = 3.1;         // max radius — Type VIIC beam 6.2 m
     const profile = [
       new THREE.Vector2(0.0,            halfLen),                // bow tip
       new THREE.Vector2(beamR * 0.45,   halfLen -  6),
@@ -6153,6 +6196,13 @@ function meshForEntity(id, kind, snap) {
     mesh.add(hull);
     mesh.add(tower);
     mesh.renderOrder = 50;
+    // Don't frustum-cull the hull: under depth-stretch a dived boat sits right
+    // at the camera's downward view edge, and the conservative bounding-sphere
+    // test culls it even though it's (partly) on screen — so it vanished while
+    // its depth pole + label (culling off) stayed. Force-draw all parts.
+    hull.frustumCulled = false;
+    tower.frustumCulled = false;
+    mesh.frustumCulled = false;
   } else if (kind === "m" || kind === "e") {
     // Ship: extruded silhouette + superstructure boxes. Per-class
     // silhouettes (Tanker / Freighter / Trawler / Passenger / Tribal /
@@ -7021,7 +7071,14 @@ function update3D() {
     if      (snap.d != null) y = -snap.d;
     else if (snap.y != null) y = snap.y;
     if (tr.kind === "u") {
-      if (y > Y_TOP)   y = Y_TOP;
+      // Allow the boat to ride ABOVE the waterline when it breaches/surfaces:
+      // the depth gauge (`d`) floors at 0, but the raw hull Y (`y`) goes
+      // positive when the sub rises clear of the water. Only let `y` raise the
+      // boat when it's genuinely ABOVE the surface (snap.y > 0) — underwater we
+      // must keep the gauge depth, or dived boats get yanked up to the hull
+      // reference (which sits near the surface) and vanish from depth,
+      // exaggerated ×5 by depth-stretch.
+      if (snap.y != null && snap.y > 0 && snap.y > y) y = snap.y;
       if (y < Y_FLOOR) y = Y_FLOOR;
     }
     // Override Y + opacity while the sink animation is playing. The
@@ -7157,6 +7214,17 @@ function update3D() {
           snap && snap.s != null && snap.s > 0.5) {
         for (const bl of mesh.userData.spinner) bl.rotation.z += 0.6;
       }
+    }
+    // U-boat hull is real-scale (~96 m), so when the camera pulls back — which
+    // depth-stretch FORCES, since the water column is 5× taller — a dived boat
+    // shrinks to a sub-pixel speck and you only see its depth pole + label.
+    // Keep a minimum apparent size: scale up with camera distance (never below
+    // true size, capped so it doesn't balloon). Mirrors the torpedo treatment.
+    if (tr.kind === "u") {
+      const dCam = camera3d.position.distanceTo(mesh.position);
+      let sc = Math.max(1, dCam * 0.0016);
+      if (sc > 8) sc = 8;
+      mesh.scale.setScalar(sc);
     }
     // Propeller wash / wake for anything under way.
     //
@@ -8615,15 +8683,46 @@ function tooltipForHover(hov) {
     const ev = data.events[hov.evIdx];
     if (!ev) return null;
     const owner = ev.owner != null ? crewIdxBoatName(ev.owner) : "?";
-    const dmg   = ev.dmg != null ? "-" + Math.round(ev.dmg) : "—";
-    const ang   = ev.h != null ? ev.h.toFixed(0) + "°" : "—";
-    const impY  = ev.y != null ? (-ev.y).toFixed(1) + " m below" : "—";
     const tgtId = ev.id ? targetByHitId[ev.id] : null;
     let targetName = "—";
     if (tgtId) {
       const tr = tracks[tgtId];
       const nm = tr && tr.samples[0] && tr.samples[0].n;
       targetName = (nm ? prettifyBoidName(String(nm)) : "") || (tr && tr.kind === "e" ? "Escort" : "Merchant");
+    }
+    // Nearest target-hull sample to the hit time — used for both hull-relative
+    // geometry below (impact angle + impact depth).
+    let hullSample = null;
+    {
+      const ss = tgtId && tracks[tgtId] ? tracks[tgtId].samples : null;
+      if (ss && ss.length) {
+        let bestDt = Infinity;
+        for (const s of ss) {
+          const dt = Math.abs(s.t - ev.t);
+          if (dt < bestDt) { bestDt = dt; hullSample = s; }
+        }
+      }
+    }
+    // Impact angle on the hull: 90° = struck square on the beam (ideal),
+    // 0° = along the keel (grazing). Torpedo impact heading vs hull heading,
+    // NOT the raw compass heading.
+    let ang = "—";
+    if (ev.h != null && hullSample && hullSample.h != null) {
+      let rel = (((ev.h - hullSample.h) % 180) + 180) % 180;   // 0..180
+      ang = Math.round(rel > 90 ? 180 - rel : rel) + "°";       // fold to 0..90
+    }
+    // Impact depth on the hull (approx): subtract the ship's sampled world Y
+    // at the hit to cancel local wave height + heave, leaving depth below the
+    // hull's transform origin (~waterline). Falls back to depth below mean sea
+    // level when the hull's vertical position isn't recorded.
+    let impY = "—";
+    if (ev.y != null) {
+      if (hullSample && hullSample.y != null) {
+        const d = hullSample.y - ev.y;
+        impY = Math.abs(d).toFixed(1) + " m " + (d >= 0 ? "below" : "above") + " hull (approx)";
+      } else {
+        impY = (-ev.y).toFixed(1) + " m below sea level";
+      }
     }
     const dTOI = deltaToTOI(ev);
     const hitTubeRow = (typeof ev.tube === "number" && ev.tube > 0)
@@ -8633,7 +8732,6 @@ function tooltipForHover(hov) {
             <div class="row"><span class="k">Hit at</span><span>${fmtEventGameTime(ev)}</span></div>
             ${hitTubeRow}
             ${dTOI ? `<div class="row"><span class="k">Δ TOI</span><span>${dTOI}</span></div>` : ""}
-            <div class="row"><span class="k">Damage</span><span>${dmg}</span></div>
             <div class="row"><span class="k">Impact angle</span><span>${ang}</span></div>
             <div class="row"><span class="k">Impact depth</span><span>${impY}</span></div>`;
   }
@@ -8715,19 +8813,31 @@ function tooltipForHover(hov) {
         if (n === 0) n = 1;
         return { pct: (drop * 100) / n, shared: n > 1 };
       };
+      // Heading of the target hull nearest a hit time — to derive the
+      // torpedo's impact angle on the hull.
+      const shipHeadingAtHit = (hitT) => {
+        if (!tgtSamples || !tgtSamples.length) return null;
+        let best = null, bestDt = Infinity;
+        for (const s of tgtSamples) { const dt = Math.abs(s.t - hitT); if (dt < bestDt) { bestDt = dt; best = s; } }
+        return best && best.h != null ? best.h : null;
+      };
       for (const h of hits) {
         const ownerName = h.owner != null ? crewIdxBoatName(h.owner) : "?";
-        const d = deltaToTOI(h);
-        const dmgInfo = hpDeltaForHit(h.t);
-        let dmgTxt = "";
-        if (dmgInfo) {
-          dmgTxt = "-" + dmgInfo.pct.toFixed(0) + "%";
-          if (dmgInfo.shared) dmgTxt += "*";
-        } else if (h.dmg != null) {
-          // Fallback: nominal torpedo damage units.
-          dmgTxt = "-" + Math.round(h.dmg) + " dmg";
+        const parts = [];
+        // Impact angle on the hull: 90° = struck square on the beam (ideal),
+        // 0° = along the keel (grazing). From the torpedo's impact heading
+        // (h.h) vs the hull heading at that moment.
+        const shipH = shipHeadingAtHit(h.t);
+        if (h.h != null && shipH != null) {
+          let rel = (((h.h - shipH) % 180) + 180) % 180;   // 0..180
+          const ang = rel > 90 ? 180 - rel : rel;          // fold to 0..90
+          parts.push("impact " + Math.round(ang) + "°");
         }
-        html += `<div class="row"><span class="k">${ownerName} · ${fmtEventGameTime(h)}</span><span>${dmgTxt}${d ? " (Δ "+d+")" : ""}</span></div>`;
+        // Real HP % lost, from the bracketing samples. The nominal torpedo
+        // dmg (always 100) is intentionally omitted — it's meaningless per-ship.
+        const dmgInfo = hpDeltaForHit(h.t);
+        if (dmgInfo) parts.push("-" + dmgInfo.pct.toFixed(0) + "%" + (dmgInfo.shared ? "*" : ""));
+        html += `<div class="row"><span class="k">${ownerName} · ${fmtEventGameTime(h)}</span><span>${parts.join("&nbsp; · &nbsp;")}</span></div>`;
       }
     } else {
       html += `<div class="row"><span class="k">No recorded hits</span><span></span></div>`;
