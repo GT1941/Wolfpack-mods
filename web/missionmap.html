@@ -5562,12 +5562,21 @@ function hideBoidAuxiliaries(id) {
   if (hp && hp.sprite) hp.sprite.visible = false;
   const ic = boidIcons.get(id);
   if (ic) {
-    if (ic.alert) ic.alert.visible = false;
-    if (ic.fire)  ic.fire.visible  = false;
-    if (ic.flee)  ic.flee.visible  = false;
-    if (ic.flood) ic.flood.visible = false;
+    if (ic.alert)     ic.alert.visible     = false;
+    if (ic.softAlert) ic.softAlert.visible = false;
+    if (ic.fire)      ic.fire.visible       = false;
+    if (ic.flee)      ic.flee.visible       = false;
+    if (ic.flood)     ic.flood.visible      = false;
     // ic.wreck intentionally left alone; showWreckIcon controls it.
   }
+  // Beam visuals must hide on sink too. Their update functions
+  // (updateSearchLight / updateConvoyBeams) only run while the boid is still
+  // sampled, so a hull sunk mid-alert keeps its last visible=true cone(s)
+  // stuck over the wreck. Both are re-shown by those updaters on scrub-back.
+  const sl = searchLights.get(id);
+  if (sl) sl.visible = false;
+  const beams = convoyBeams.get(id);
+  if (beams) { if (beams[0]) beams[0].visible = false; if (beams[1]) beams[1].visible = false; }
 }
 
 // Show the sinking-ship wreck marker over a descending hull.
