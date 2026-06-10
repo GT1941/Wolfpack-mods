@@ -91,6 +91,8 @@
   #sidebarRight {
     position: static; top: auto; right: auto;
     margin-top: 4px;
+    width: 300px;   /* wider than the left sidebar — the U-boat rows (speed ·
+                       HDG · depth · UK · battery · ping) were wrapping */
   }
   #sidebar .panel, #sidebarRight .panel {
     background: rgba(19,26,31,0.92);
@@ -381,13 +383,19 @@
   /* Per-boat Follow toggle — small inline button on the right of the name row */
   #uboatList .followBtn {
     margin-left: auto;
-    padding: 1px 6px;
-    font-size: 9px; font-family: inherit;
     background: rgba(19,26,31,0.85);
-    color: var(--fg); border: 1px solid var(--line); border-radius: 3px;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 2px 8px;
     cursor: pointer;
+    letter-spacing: 0.04em;
+    text-align: center;
+    min-width: 64px;     /* match the View / Nav / Trail toggles below */
   }
-  #uboatList .followBtn:hover { border-color: var(--amber); }
+  #uboatList .followBtn:hover { border-color: var(--amber); color: var(--fg); }
   #uboatList .followBtn.active {
     background: var(--amber); color: #1a1a1a; border-color: var(--amber);
   }
@@ -556,6 +564,11 @@
           <div class="row"><span>🤦</span>&nbsp;Collision (heard, not classified)</div>
           <div class="row"><span>🦀</span>&nbsp;Aground (sitting on bottom)</div>
           <div class="row"><span>⚓</span>&nbsp;Anchored on surface</div>
+          <div class="row"><span style="color:#facc15">❗</span>&nbsp;Alerted (escort engaging)</div>
+          <div class="row"><span style="color:#c98c2a">❓</span>&nbsp;Investigating (soft contact)</div>
+          <div class="row"><span>🔥</span>&nbsp;Burning</div>
+          <div class="row"><span>💡</span>&nbsp;Convoy fleeing</div>
+          <div class="row"><span>💧</span>&nbsp;Flooding (taking damage)</div>
         </div>
       </div>
       <div class="panel collapsed" id="toiPanel">
@@ -650,6 +663,7 @@
             <label class="toggle" title="Project a long red ray forward from every escort along its current heading. Helps predict where each escort is steering. Surface escorts only — sunk hulls and merchants are unaffected."><input type="checkbox" id="escortHeadingRaysOn"> Escort heading rays</label>
             <label class="toggle" title="Show airborne illumination rounds (starshells) — convoy-AI flares and player deck-gun illumination. Turn off to declutter the sky during a flare-heavy engagement or celebration."><input type="checkbox" id="flaresOn" checked> Flares (starshells)</label>
             <label class="toggle" title="Show the 💡 fleeing indicator above convoy merchants when the convoy AI is in its flee state. Turn off to declutter."><input type="checkbox" id="fleeIconsOn" checked> Fleeing markers (💡)</label>
+            <label class="toggle" title="Show health bars above DAMAGED convoy ships and escorts. Bars only appear once a hull has taken damage (full-health ships stay clean); turn off to hide them entirely."><input type="checkbox" id="hpBarsOn" checked> Health bars</label>
             <div style="color:var(--dim); font-size:11px; padding-top:4px; line-height:1.4;">
               U-boat trails toggle per-boat from the U-boat list above.
             </div>
@@ -4574,6 +4588,12 @@ function updateHpBar3D(id, kind, snap, meshPosition) {
     if (e) e.sprite.visible = false;
     return;
   }
+  // Display-panel "Health bars" toggle — hide every boid HP bar when off.
+  if (!trailToggles.health) {
+    const e = hpBars.get(id);
+    if (e) e.sprite.visible = false;
+    return;
+  }
   if (!snap || snap.hp == null) {
     const e = hpBars.get(id);
     if (e) e.sprite.visible = false;
@@ -4591,6 +4611,16 @@ function updateHpBar3D(id, kind, snap, meshPosition) {
     frac = snap.hp;
   }
   frac = Math.max(0, Math.min(1, frac));
+
+  // Only show the bar for DAMAGED hulls. Full-health convoy/escort ships
+  // (frac ~1) would otherwise blanket the map with green bars — newer
+  // Wolfpack builds emit hp=1 for every healthy boid where older builds
+  // emitted none, so without this gate a fresh convoy is a wall of bars.
+  if (frac >= UNDAMAGED_HP_THRESHOLD) {
+    const e = hpBars.get(id);
+    if (e) e.sprite.visible = false;
+    return;
+  }
 
   let entry = hpBars.get(id);
   if (!entry) {
@@ -5474,29 +5504,42 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
   // catching any meaningful hull damage.
   const flooding = (snap && snap.hp != null && snap.hp < 0.99);
 
+  // Icons sit in a row just to the RIGHT of the name label, at the label's
+  // height — so they read as badges beside the name instead of floating high
+  // above the hull. baseX clears the name (the label is centred on the hull
+  // and capped to roughly hull length); `slot` advances per visible icon so
+  // they never overlap each other.
+  const _meta = boidMetaById ? boidMetaById.get(id) : null;
+  const _shipLen = (_meta && _meta.length > 1) ? _meta.length : (kind === "m" ? 120 : 90);
+  const iconY = Y_TOP + 50;                       // same height as the name label
+  const baseX = meshPosition.x + _shipLen * 0.5 + 14;
+  const ICON_DX = 45;
+  let slot = 0;
+  const placeIcon = (sprite) => {
+    sprite.position.set(baseX + slot * ICON_DX, iconY, meshPosition.z);
+    sprite.visible = true;
+    pinSpriteToCamera(sprite, 60, 60);
+    slot++;
+  };
+
   if (alerted) {
     if (!entry.alert) {
       entry.alert = makeIconSprite(emojiTexture("❗", "#facc15"), 60);
       scene3d.add(entry.alert);
     }
-    entry.alert.position.set(meshPosition.x, Y_TOP + 105, meshPosition.z);
-    entry.alert.visible = true;
-    pinSpriteToCamera(entry.alert, 60, 60);
+    placeIcon(entry.alert);
   } else if (entry.alert) {
     entry.alert.visible = false;
   }
 
-  // Soft alert — same slot/anchor as hard alert (they're mutually
-  // exclusive: an escort is either investigating OR engaging). Dim
-  // amber colour reads as "less urgent than the red-yellow !".
+  // Soft alert — mutually exclusive with hard alert (an escort is either
+  // investigating OR engaging). Dim amber reads as "less urgent than ❗".
   if (softAlert) {
     if (!entry.softAlert) {
       entry.softAlert = makeIconSprite(emojiTexture("❓", "#c98c2a"), 60);
       scene3d.add(entry.softAlert);
     }
-    entry.softAlert.position.set(meshPosition.x, Y_TOP + 105, meshPosition.z);
-    entry.softAlert.visible = true;
-    pinSpriteToCamera(entry.softAlert, 60, 60);
+    placeIcon(entry.softAlert);
   } else if (entry.softAlert) {
     entry.softAlert.visible = false;
   }
@@ -5506,11 +5549,7 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
       entry.fire = makeIconSprite(emojiTexture("🔥", "#ffaa55"), 60);
       scene3d.add(entry.fire);
     }
-    // Offset horizontally if also alerted so both icons remain readable.
-    const dx = alerted ? 40 : 0;
-    entry.fire.position.set(meshPosition.x + dx, Y_TOP + 105, meshPosition.z);
-    entry.fire.visible = true;
-    pinSpriteToCamera(entry.fire, 60, 60);
+    placeIcon(entry.fire);
   } else if (entry.fire) {
     entry.fire.visible = false;
   }
@@ -5520,12 +5559,7 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
       entry.flee = makeIconSprite(emojiTexture("💡", "#fde047"), 30);
       scene3d.add(entry.flee);
     }
-    // Stack to the right of any already-rendered icons so all three
-    // remain readable side-by-side at high zoom.
-    const dx = (alerted ? 40 : 0) + (burning ? 40 : 0);
-    entry.flee.position.set(meshPosition.x + dx, Y_TOP + 105, meshPosition.z);
-    entry.flee.visible = true;
-    pinSpriteToCamera(entry.flee, 60, 60);
+    placeIcon(entry.flee);
   } else if (entry.flee) {
     entry.flee.visible = false;
   }
@@ -5535,11 +5569,7 @@ function updateBoidStateIcons3D(id, kind, snap, meshPosition) {
       entry.flood = makeIconSprite(emojiTexture("💧", "#67e8f9"), 60);
       scene3d.add(entry.flood);
     }
-    // Stack right of all the other icons.
-    const dx = (alerted ? 40 : 0) + (burning ? 40 : 0) + (fleeing ? 40 : 0);
-    entry.flood.position.set(meshPosition.x + dx, Y_TOP + 105, meshPosition.z);
-    entry.flood.visible = true;
-    pinSpriteToCamera(entry.flood, 60, 60);
+    placeIcon(entry.flood);
   } else if (entry.flood) {
     entry.flood.visible = false;
   }
@@ -6194,10 +6224,12 @@ function meshForEntity(id, kind, snap) {
 
     // Conning tower: shorter, narrower box sitting on top of the hull,
     // slightly aft of midship to match the real-world placement on
-    // Type VII / IX boats. Pokes ~5 m above the hull crown so it's
-    // legible from the top-down camera at typical zoom levels.
+    // Type VII / IX boats. Its base sits ON the hull crown (embedded a hair
+    // so there's no floating gap) and it rises a couple of metres above for
+    // legibility. Box half-height is beamR*0.95/2 ≈ 1.47, so a centre at
+    // beamR + 1.2 puts the base just inside the crown (y≈2.83 vs crown 3.1).
     const towerGeo = new THREE.BoxGeometry(beamR * 0.7, beamR * 0.95, 14);
-    towerGeo.translate(0, beamR + 2.2, -3);
+    towerGeo.translate(0, beamR + 1.2, -3);
     const tower = new THREE.Mesh(towerGeo, mat);
     tower.renderOrder = 50;
 
@@ -7632,9 +7664,8 @@ function animate3D() {
 // the boat's position showing the measured range. It drifts downward
 // and fades out — surfaces under-keel data only at the moment the crew
 // actually reads the gauge, instead of cluttering the label all the time.
-const pingFloats = new Map();    // event idx → { sprite, t0, baseY }
+const pingFloats = new Map();    // event idx → { sprite, t0, startY, endY }
 const PING_FLOAT_LIFE_S = 4;
-const PING_FLOAT_DROP_M = 60;
 function updatePingFloats() {
   if (!data || !data.events) return;
   // Spawn new ones: events whose t is now within the float lifetime.
@@ -7644,14 +7675,23 @@ function updatePingFloats() {
     if (currentT < ev.t) continue;
     if (currentT - ev.t > PING_FLOAT_LIFE_S) continue;
     if (pingFloats.has(i)) continue;
-    const range = (typeof ev.range === "number") ? ev.range.toFixed(0) + "m" : "ping";
-    const spr = makeTextSprite(range, "#67e8f9", 160, 40);
+    const rangeM = (typeof ev.range === "number") ? ev.range : null;
+    const label = rangeM != null ? rangeM.toFixed(0) + "m" : "ping";
+    const spr = makeTextSprite(label, "#67e8f9", 160, 40);
     if (!spr) continue;
-    spr.position.set(ev.x, stretchY(0) + 30, ev.z);
+    // Echo-sounder range is keel→seabed, so anchor the number at the SEABED
+    // below the boat and let it rise UP to the hull over its lifetime (the
+    // echo returning) — not drop down from the surface. Boat depth at the
+    // ping moment sets the keel reference; seabed = keel depth + range.
+    const psnap = entitySnapshot(ev.id, ev.t);
+    const boatDepth = (psnap && psnap.d != null) ? psnap.d : 0;
+    const seabedY = stretchY(-(boatDepth + (rangeM || 0)));
+    const boatY   = stretchY(-boatDepth) + 30;
+    spr.position.set(ev.x, seabedY, ev.z);
     spr.renderOrder = 65;
     spr.frustumCulled = false;
     scene3d.add(spr);
-    pingFloats.set(i, { sprite: spr, t0: ev.t, baseY: spr.position.y });
+    pingFloats.set(i, { sprite: spr, t0: ev.t, startY: seabedY, endY: boatY });
   }
   // Advance + retire.
   for (const [k, p] of pingFloats) {
@@ -7664,7 +7704,8 @@ function updatePingFloats() {
       continue;
     }
     const u = age / PING_FLOAT_LIFE_S;
-    p.sprite.position.y = p.baseY - PING_FLOAT_DROP_M * u;
+    // Rise from the seabed up to the hull (echo returning to the boat).
+    p.sprite.position.y = p.startY + (p.endY - p.startY) * u;
     p.sprite.material.opacity = 1 - u * u;
     pinSpriteToCamera(p.sprite, 160, 40);
   }
@@ -8374,7 +8415,7 @@ function rebuildUboatStats() {
 // uboatList (uboatTrailVisible[] below); uboatFull stays here as the
 // always-on full-track behaviour since the per-boat toggle drops the
 // 10-km tail-cap concept.
-const trailToggles = { uboatFull: true, convoy: false, escort: false, headingRays: false, flares: true, fleeIcons: true };
+const trailToggles = { uboatFull: true, convoy: false, escort: false, headingRays: false, flares: true, fleeIcons: true, health: true };
 function _wireTrailToggle(id, key) {
   const el = $(id);
   if (!el) return;
@@ -8391,6 +8432,7 @@ _wireTrailToggle("trailEscortOn",  "escort");
 _wireTrailToggle("escortHeadingRaysOn", "headingRays");
 _wireTrailToggle("flaresOn", "flares");
 _wireTrailToggle("fleeIconsOn", "fleeIcons");
+_wireTrailToggle("hpBarsOn", "health");
 
 // Per-u-boat visibility state, indexed by crew index (0..3). Drive the
 // View / Trail / Nav toggles on each uboatList row. All persisted to
@@ -8980,6 +9022,9 @@ function applyDepthMode(mode) {
   bathyMode = mode;
   if (_depthModeBtn) _depthModeBtn.textContent = "Depth: " + (BATHY_MODE_LABEL[mode] || mode);
   markRender3DDirty();
+  // The U-boat rows show under-keel (survey modes) vs ping (pinger mode)
+  // depending on this; refresh them so the switch is visible even when paused.
+  updateUboatList();
 }
 function cycleDepthMode() {
   const i = BATHY_MODES.indexOf(bathyMode);
@@ -9197,6 +9242,7 @@ function rebuildUboatList() {
 
     btn.innerHTML =
       `<div class="nameRow">${imgHtml}<span style="color:${col.fill || "#fff"}">${nm}</span>` +
+      `<span class="hpName"></span>` +
       `<button class="followBtn${followActive}" data-boat-id="${id}" title="Lock the camera to this boat (M-key independent)">${followLabel}</button>` +
       `</div>` +
       // Body row: stats fill the left column, toggle buttons stack
@@ -9417,32 +9463,46 @@ function updateUboatList() {
     // Pitch / roll — recorded in 1.9.6+, omitted when ~0°. Show the
     // real numeric values regardless of any tilt-amplification setting
     // so the captain always sees the truth.
-    let tiltPart = "";
-    if (snap.pi != null || snap.ro != null) {
-      // Convention from the recorder: positive pitch = nose up, negative = nose down.
-      // Render as ↑/↓ with a degree value; roll as ⟲/⟳ if present.
-      const segs = [];
-      if (snap.pi != null) {
-        const arrow = snap.pi > 0 ? "↑" : (snap.pi < 0 ? "↓" : "·");
-        const abs   = Math.abs(snap.pi).toFixed(1);
-        segs.push(`<span title="pitch">${arrow}${abs}°</span>`);
-      }
-      if (snap.ro != null && Math.abs(snap.ro) > 0.5) {
-        const rollMark = snap.ro > 0 ? "⟳" : "⟲";
-        const abs = Math.abs(snap.ro).toFixed(1);
-        segs.push(`<span title="roll">${rollMark}${abs}°</span>`);
-      }
-      if (segs.length) tiltPart = segs.join(' <span class="lbl">·</span> ');
+    // Pitch arrow: the recorder's pitch sign reads inverted on screen (a
+    // nose-up climb was showing ↓), so flip it — positive → ↓, negative → ↑.
+    // Roll as ⟲/⟳. Kept as separate parts so they sit side-by-side under depth.
+    let pitchPart = "";
+    if (snap.pi != null) {
+      const arrow = snap.pi > 0 ? "↓" : (snap.pi < 0 ? "↑" : "·");
+      const abs   = Math.abs(snap.pi).toFixed(1);
+      pitchPart = `<span class="lbl">pitch</span> <span title="pitch">${arrow}${abs}°</span>`;
+    }
+    let rollPart = "";
+    if (snap.ro != null && Math.abs(snap.ro) > 0.5) {
+      const rollMark = snap.ro > 0 ? "⟳" : "⟲";
+      const abs = Math.abs(snap.ro).toFixed(1);
+      rollPart = `<span class="lbl">roll</span> <span title="roll">${rollMark}${abs}°</span>`;
     }
 
-    // Compose: line 1 speed + heading, line 2 depth + under-keel,
-    // line 3 battery + HP + tilt (only when at least one has data).
+    // Compose the body lines:
+    //   line 1 — speed + heading
+    //   line 2 — depth + seafloor clearance (under-keel when surveying / the
+    //            live ping in Pinger mode — mutually exclusive)
+    //   line 3 — pitch + roll
+    // Health + power move up to the name row (right of the boat name); below.
     const line1 = `<span style="color:${speedColor}">${speedTxt}</span>${sArrowSpan} <span class="lbl">·</span> <span class="lbl">HDG</span> ${hdg}`;
-    const line2 = `<span style="color:${depthColor}">${depthTxt}</span>${dArrowSpan} <span class="lbl">·</span> ↧<span class="uk${ukWarn ? " warn" : ""}">${uk}</span>`;
-    const line3parts = [batPart, hpPart, tiltPart, pingPart].filter(s => s);
+
+    // Seafloor figure follows the header Depth source: Pinger → show only the
+    // live echo-sounder ping; Trailing / Full survey → show the swept under-keel.
+    const depthSeg = `<span style="color:${depthColor}">${depthTxt}</span>${dArrowSpan}`;
+    const ukSeg    = `↧<span class="uk${ukWarn ? " warn" : ""}">${uk}</span>`;
+    const floorSeg = (bathyMode === "pinger") ? pingPart : ukSeg;
+    const line2parts = [depthSeg, floorSeg].filter(s => s);
+    const line2 = line2parts.length ? "<br>" + line2parts.join(' <span class="lbl">·</span> ') : "";
+
+    const line3parts = [pitchPart, rollPart].filter(s => s);
     const line3 = line3parts.length ? "<br>" + line3parts.join(' <span class="lbl">·</span> ') : "";
 
-    statsEl.innerHTML = line1 + "<br>" + line2 + line3;
+    statsEl.innerHTML = line1 + line2 + line3;
+
+    // Health + power badges live on the name row now, right of the boat name.
+    const hpNameEl = btn.querySelector(".hpName");
+    if (hpNameEl) hpNameEl.innerHTML = [hpPart, batPart].filter(s => s).join(' <span class="lbl">·</span> ');
   }
 }
 
