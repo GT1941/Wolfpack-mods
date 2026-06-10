@@ -76,16 +76,18 @@ Scales convoy size by a fixed multiplier — more merchants, armed merchants, ca
 
 ## LargerConvoyScaled (experimental)
 
-Sibling of the LargerConvoy multiplier family with a different design: instead of a single ×N factor, it uses **per-size targets** with a flat 100k-step goal progression and 25k of spawn headroom over every goal. Lobby size selector becomes a difficulty knob rather than a convoy-size knob:
+Sibling of the LargerConvoy multiplier family with a different design: instead of a single ×N factor, it uses **per-size targets**, so the lobby size selector becomes a difficulty knob rather than a convoy-size knob. Every value is **configurable** (see below). Defaults:
 
 | Convoy size | Scaled spawn | Scaled goal | Scaled escorts (S / C / DD) | Total escorts |
 | --- | ---:| ---:| ---:| ---:|
-| Small      | 125,000 t | 100,000 t | 0 /  4 / 1 |  5 |
-| Normal     | 225,000 t | 200,000 t | 0 /  8 / 3 | 11 |
-| Large      | 325,000 t | 300,000 t | 4 / 10 / 3 | 17 |
-| Very Large | 425,000 t | 400,000 t | 7 / 11 / 4 | 22 |
+| Small      | 225,000 t | 200,000 t | 0 / 4 / 1 |  5 |
+| Normal     | 275,000 t | 250,000 t | 2 / 8 / 1 | 11 |
+| Large      | 375,000 t | 350,000 t | 2 / 8 / 2 | 12 |
+| Very Large | 475,000 t | 450,000 t | 2 / 8 / 3 | 13 |
 
 Unlike the multiplier variants, this one also raises the mission's tonnage goal — the threshold needed to "succeed" — so the relative challenge stays roughly constant rather than collapsing under the extra targets. The host's setting propagates to every peer in the lobby. Escort counts are absolute per-size targets so the screen feels comparable even when the rolled encounter has a different default.
+
+**Configuration:** on first run the mod writes `BepInEx/config/LargerConvoyScaled.cfg` with a section per lobby size (`[Small]`, `[Normal]`, `[Large]`, `[VeryLarge]`), each exposing `SpawnTonnage`, `TonnageGoal`, `Sloops`, `Corvettes`, and `Destroyers`. Edit the file and restart the game to apply. Keep each tier's goal at or below its spawn tonnage, or that size becomes unwinnable.
 
 **Install on:** host only. **Do not load alongside any other `LargerConvoy*.dll`** — they would interfere with each other.
 
