@@ -2,6 +2,8 @@
 
 BepInEx mods for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/) (pre-beta, IL2CPP). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
 
+The DLLs at the root of this repo are always the current version of each mod. Older versions are available on the [Releases](../../releases) page if a new build ever regresses something for you and you need to step back — each release is tagged `<ModName>-v<version>` (e.g. `MissionMap-v1.9.34`) with that mod's DLL attached.
+
 ---
 
 ## MissionMap
