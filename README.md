@@ -24,6 +24,10 @@ Records every entity's position over the course of a mission and ships with a fu
 
 A 3D replay viewer is included at [`missionmap/pre-2.0/missionmap.html`](missionmap/pre-2.0/missionmap.html) — drop a mission JSON onto it. Three.js scene with to-scale hulls, a hierarchical Kriegsmarine naval grid that subdivides as you zoom, seafloor depth markers with zoom-based LOD, per-U-boat chart-drawing toggles, multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system. Escorts carry alert glyphs (❗ when engaging, ❓ when investigating) and an optional 8 km red "heading ray" that aims at the AI's predicted intercept point when hunting. Convoy ships sprout two static searchbeams each at night when alerted.
 
+MissionMap 2.0 preview:
+
+![MissionMap 2.0 preview](missionmap/2.0/missionmap-2.0-preview.png)
+
 **Discord auto-post (experimental):** there is an initial attempt at automatically posting the finished mission JSON (plus an optional summary, roster, and settings) to a Discord channel via webhook. It's off by default and configured entirely through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it. Treat it as a work in progress.
 
 **Notes:**
@@ -193,6 +197,7 @@ want to try it, but expect drift against current game versions.
 │   └── NetworkFix.dll
 └── missionmap/
     ├── 2.0/                 # coming soon
+    │   └── missionmap-2.0-preview.png
     └── pre-2.0/
         ├── MissionMap.dll
         ├── missionmap.html
