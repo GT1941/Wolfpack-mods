@@ -82,7 +82,7 @@ Scales convoy size by a fixed multiplier — more merchants, armed merchants, ca
 
 ---
 
-## LargerConvoyScaled (experimental)
+## LargerConvoyScaled
 
 Sibling of the LargerConvoy multiplier family with a different design: instead of a single ×N factor, it uses **per-size targets**, so the lobby size selector becomes a difficulty knob rather than a convoy-size knob. Every value is **configurable** (see below). Defaults:
 
