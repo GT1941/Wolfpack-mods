@@ -151,5 +151,4 @@ in `LICENSE.txt`:
 - **HarmonyX** (the Harmony2 fork bundled with BepInEx 6) — MIT
 
 ## Donation link
-If you want to donate to support this work, id be grateful.
-<https://ko-fi.com/datamaskin>
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L8E121S5BX)
