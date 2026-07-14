@@ -2,8 +2,6 @@
 
 BepInEx mods for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
 
-Released DLLs are grouped by mod and release status below.
-
 ---
 
 ## MissionMap
