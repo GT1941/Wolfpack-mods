@@ -2,13 +2,15 @@
 
 BepInEx mods for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/) (pre-beta, IL2CPP). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
 
-The DLLs at the root of this repo are always the current version of each mod. Older versions are available on the [Releases](../../releases) page if a new build ever regresses something for you and you need to step back — each release is tagged `<ModName>-v<version>` (e.g. `MissionMap-v1.9.34`) with that mod's DLL attached.
+Released DLLs are grouped by mod and release status below. Older versions are available on the [Releases](../../releases) page if a new build ever regresses something for you and you need to step back — each release is tagged `<ModName>-v<version>` (e.g. `MissionMap-v1.9.34`) with that mod's DLL attached.
 
 ---
 
 ## MissionMap
 
 Records every entity's position over the course of a mission and ships with a full 3D replay viewer.
+
+**MissionMap 2.0 is coming soon.** The public release currently contains the archived pre-2.0 recorder and viewer under `missionmap/pre-2.0/`; the 2.0 recorder and viewer are still being finalized.
 
 **Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
 - U-boats sampled every 1 s (drops to 0.25 s during dives so under-keel tracks transitions): position, depth, speed, heading, HP, battery, under-keel clearance.
@@ -20,7 +22,7 @@ Records every entity's position over the course of a mission and ships with a fu
 - Mission settings, crew roster snapshots, and player connect/disconnect events.
 - Top-level: ISO-8601 timestamp with timezone offset, in-game date, game-time anchor + measured game-time rate.
 
-A 3D replay viewer is included at [`web/missionmap.html`](web/missionmap.html) — drop a mission JSON onto it. Three.js scene with to-scale hulls, a hierarchical Kriegsmarine naval grid that subdivides as you zoom, seafloor depth markers with zoom-based LOD, per-U-boat chart-drawing toggles, multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system. Escorts carry alert glyphs (❗ when engaging, ❓ when investigating) and an optional 8 km red "heading ray" that aims at the AI's predicted intercept point when hunting. Convoy ships sprout two static searchbeams each at night when alerted.
+A 3D replay viewer is included at [`missionmap/pre-2.0/missionmap.html`](missionmap/pre-2.0/missionmap.html) — drop a mission JSON onto it. Three.js scene with to-scale hulls, a hierarchical Kriegsmarine naval grid that subdivides as you zoom, seafloor depth markers with zoom-based LOD, per-U-boat chart-drawing toggles, multi-TOI tracking, bathymetry sweep, per-boat hit stats, overspeed glow, and an under-keel warning system. Escorts carry alert glyphs (❗ when engaging, ❓ when investigating) and an optional 8 km red "heading ray" that aims at the AI's predicted intercept point when hunting. Convoy ships sprout two static searchbeams each at night when alerted.
 
 **Discord auto-post (experimental):** there is an initial attempt at automatically posting the finished mission JSON (plus an optional summary, roster, and settings) to a Discord channel via webhook. It's off by default and configured entirely through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it. Treat it as a work in progress.
 
@@ -175,21 +177,26 @@ want to try it, but expect drift against current game versions.
 
 ```
 .
-├── GameTime_API.dll
-├── LargerConvoy1_5x.dll
-├── LargerConvoy2x.dll
 ├── LargerConvoyScaled.dll
 ├── LogbookSeconds.dll
-├── MissionMap.dll
-├── RadioAPI.dll
-├── TimeHUD.dll
 ├── TorpedoLoadout.dll
+├── Other Mods/
+│   ├── EscortDCStock.dll
+│   ├── GameTime_API.dll
+│   ├── RadioAPI.dll
+│   ├── SettingsKeeper.dll
+│   └── TimeHUD.dll
 ├── archive/
+│   ├── LargerConvoy1_5x.dll
+│   ├── LargerConvoy2x.dll
 │   ├── LogbookExport.dll
 │   └── NetworkFix.dll
-└── web/
-    ├── missionmap.html
-    └── toi.html
+└── missionmap/
+    ├── 2.0/                 # coming soon
+    └── pre-2.0/
+        ├── MissionMap.dll
+        ├── missionmap.html
+        └── insignia/
 ```
 
 Source is not currently public.
