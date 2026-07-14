@@ -149,3 +149,7 @@ in `LICENSE.txt`:
 
 - **BepInEx** — GNU Lesser General Public License, version 2.1
 - **HarmonyX** (the Harmony2 fork bundled with BepInEx 6) — MIT
+
+## Donation link
+If you want to donate to support this work, id be grateful.
+<https://streamlabs.com/datamaskin/tip>
