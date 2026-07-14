@@ -152,4 +152,4 @@ in `LICENSE.txt`:
 
 ## Donation link
 If you want to donate to support this work, id be grateful.
-<https://streamlabs.com/datamaskin/tip>
+<https://ko-fi.com/datamaskin>
