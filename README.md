@@ -59,48 +59,6 @@ Each player sees their own logbook locally — the mod doesn't change anything o
 
 ---
 
-## LargerConvoy
-
-Scales convoy size by a fixed multiplier — more merchants, armed merchants, carriers, sloops, corvettes, and destroyers spawn in every encounter.
-
-> **Note:** The mission's success/scoring tonnage goal is **not** scaled — only the spawned convoy is. So with ×2 you'll see roughly twice as many targets, but the threshold to "succeed" the mission stays the same as the unmodded value, effectively making missions easier (more targets to chew through for the same objective).
-
-> **Note:** Convoy and escort AI is not designed for these inflated counts. Expect odd behaviour — formation glitches, escorts overlapping or piling up, weird pathing, unusual detection/fleeing responses. The game's AI is balanced around the unmodded convoy size; this mod just scales the spawn counts.
-
-**Install on:** host only.
-
-### Variants
-
-| DLL | Multiplier | Notes |
-| --- | --- | --- |
-| `LargerConvoy1_5x.dll` | ×1.5 | Gentle bump |
-| `LargerConvoy2x.dll` | ×2 | Default |
-
-> **Important:** Load only **one** LargerConvoy DLL at a time. Loading two would stack the multipliers — e.g. `1_5x` + `2x` would give ×3, not ×2. When switching variants, delete the old DLL from `BepInEx/plugins/` before dropping in the new one.
-
----
-
-## LargerConvoyScaled
-
-Sibling of the LargerConvoy multiplier family with a different design: instead of a single ×N factor, it uses **per-size targets**, so the lobby size selector becomes a difficulty knob rather than a convoy-size knob. Every value is **configurable** (see below). Defaults:
-
-| Convoy size | Scaled spawn | Scaled goal | Scaled escorts (S / C / DD) | Total escorts |
-| --- | ---:| ---:| ---:| ---:|
-| Small      | 225,000 t | 200,000 t | 0 / 4 / 1 |  5 |
-| Normal     | 275,000 t | 250,000 t | 2 / 8 / 1 | 11 |
-| Large      | 375,000 t | 350,000 t | 2 / 8 / 2 | 12 |
-| Very Large | 475,000 t | 450,000 t | 2 / 8 / 3 | 13 |
-
-Unlike the multiplier variants, this one also raises the mission's tonnage goal — the threshold needed to "succeed" — so the relative challenge stays roughly constant rather than collapsing under the extra targets. The host's setting propagates to every peer in the lobby. Escort counts are absolute per-size targets so the screen feels comparable even when the rolled encounter has a different default.
-
-**Configuration:** on first run the mod writes `BepInEx/config/LargerConvoyScaled.cfg` with a section per lobby size (`[Small]`, `[Normal]`, `[Large]`, `[VeryLarge]`), each exposing `SpawnTonnage`, `TonnageGoal`, `Sloops`, `Corvettes`, and `Destroyers`. Edit the file and restart the game to apply. Keep each tier's goal at or below its spawn tonnage, or that size becomes unwinnable.
-
-**Install on:** host only. **Do not load alongside any other `LargerConvoy*.dll`** — they would interfere with each other.
-
-> Convoy/escort AI is not designed for inflated counts of this magnitude. Expect formation glitches and odd path-finding at the higher sizes.
-
----
-
 ## TorpedoLoadout
 
 Sets the per-boat torpedo loadout to **14 steam (T1) and 14 electric (T2)**, applied to all 4 crews. The override catches every reload path — mission start, the lobby's reset button, default-loadout reload — so the count stays at 14/14 regardless of how the game tries to reset it.
@@ -109,47 +67,15 @@ Sets the per-boat torpedo loadout to **14 steam (T1) and 14 electric (T2)**, app
 
 ---
 
-## Game Time API
+## Other Mods
 
-Exposes in-game state via a local HTTP API on port 1941 for use by webpages, OBS overlays, or other tools.
+Additional utilities in the [`Other Mods/`](Other%20Mods/) folder:
 
-**Endpoint:** `http://127.0.0.1:1941/time` returns JSON, e.g.:
-
-```json
-{"time":"08:59:03","date":"01.09.1939","vessel":"U-552","missionActive":true}
-```
-
-A sample webpage that shows a countdown from current in-game time to a chosen impact time is provided at [`web/toi.html`](web/toi.html) — open it locally in any browser while the game is running.
-
-**Install on:** any client.
-
----
-
-## TimeHUD
-
-Two small features in one mod:
-
-1. **In-game clock HUD** — a small label in the top-right of the screen showing the current in-game clock (`HH:MM:SS` by default; seconds optional). Drawn over the game UI so it sits on top of every screen.
-2. **Chat timestamps** — every chat line gets an `HH:MM:SS - ` prefix in front of the username, e.g. `08:13:24 - U-96: target sighted`. When the host has the mod installed, the timestamp is added once at the server and every peer sees it regardless of whether they have the mod themselves. Server time is the same on every peer, so the stamps line up across the lobby.
-
-Both features are individually togglable in the mod's config file, with knobs for font size, whether to show seconds on the HUD, etc.
-
-**Install on:** any client. Install on the host to add chat stamps everyone sees.
-
----
-
-## RadioAPI
-
-Exposes the in-game radio's send/receive stream as a local HTTP API on port 1942 for external tools and overlays.
-
-**Endpoints:**
-- `GET  /` — current radio state (channel, RX buffer).
-- `POST /send-char`, `/send-text`, `/send-morse-bits` — transmit through the player's radio, network-replicated like typing on the in-game radio. Pacing follows the game's per-letter Morse duration so repeated letters key correctly. Scandinavian/German letters substitute to ASCII Morse digraphs (`Å → AA`, `Ø → OE`, `Æ → AE`, etc.).
-- `POST /inject-char`, `/inject-text` — local-only test harness: drives the receive side without putting anything on the network. Useful for solo training / bot-sim.
-
-A companion HTML frontend (codebook, Bot Sim panel, Enigma helper, Web Audio fallback synth) is available in the dev repo.
-
-**Install on:** any client.
+- **Game Time API** — exposes in-game time and mission state at `http://127.0.0.1:1941/time` for webpages and overlays. Install on any client.
+- **TimeHUD** — adds an in-game clock and optional synchronized chat timestamps. Install on any client; host installation makes chat timestamps visible to everyone.
+- **RadioAPI** — exposes radio send/receive endpoints at `http://127.0.0.1:1942` for external tools and overlays. Install on any client.
+- **EscortDCStock** — restores stock-style escort depth-charge inventory and reload behavior. Host only.
+- **SettingsKeeper** — persists selected Wolfpack settings between launches. Install on any client.
 
 ---
 
@@ -166,6 +92,12 @@ want to try it, but expect drift against current game versions.
 - **`archive/NetworkFix.dll`** — bumped the multiplayer network update
   rate to reduce rubber-banding and desync. Recent game patches appear
   to have addressed most of what it was working around.
+- **`archive/LargerConvoy1_5x.dll`** / **`archive/LargerConvoy2x.dll`** —
+  increase convoy spawn counts by ×1.5 or ×2. Load only one variant at a
+  time; the convoy AI may behave unpredictably at inflated sizes.
+- **`LargerConvoyScaled.dll`** — uses configurable per-lobby-size spawn,
+  tonnage-goal, and escort targets. Host only; do not load alongside another
+  `LargerConvoy*.dll`.
 
 ---
 
