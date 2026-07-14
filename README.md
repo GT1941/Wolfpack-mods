@@ -10,21 +10,17 @@ Records every entity's position over the course of a mission and ships with a fu
 
 **MissionMap 2.0 is coming soon.** The public release currently contains the archived pre-2.0 recorder and viewer under `Mission Map/pre-2.0/`; the 2.0 recorder and viewer are still being finalized.
 
-**Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
-- U-boats sampled every 1 s (drops to 0.25 s during dives so under-keel tracks transitions): position, depth, speed, heading, HP, battery, under-keel clearance.
-- Convoy ships every 15 s: position, heading, physical speed, ship-type name, HP, two-level alert flag (hard = target acquired, soft = investigating without target), target bearing on hard-alerted escorts, burning flag.
-- Torpedoes and depth charges per tick whenever they're in flight (torpedo depth included).
-- Seafloor depth markers tagged with a coarse / fine level so the viewer can replicate the in-game zoom-based LOD swap.
-- Events: torpedo launch (with TDC range, set speed in kn, gyro, depth, type, magnetic flag, owner, tube), torpedo hit (with tube + server-synced time), ship sunk (name + tonnage), depth-charge fire/impact, gun fire/land, collisions, bottom hits, u-boat lost.
-- Crew chart drawings (lines, circles, time-nodes, text annotations) with per-boat ownership.
-- Mission settings, crew roster snapshots, and player connect/disconnect events.
-- Top-level: ISO-8601 timestamp with timezone offset, in-game date, game-time anchor + measured game-time rate.
-
-A 3D replay viewer is included at [`Mission Map/pre-2.0/missionmap.html`](<Mission Map/pre-2.0/missionmap.html>) — drop a mission JSON onto it to review the patrol. It shows the boats, convoy, torpedoes, routes, depths, chart drawings, hits, and other important events on an interactive map. You can follow individual U-boats, measure distances and times, inspect attacks, and see when escorts are searching or engaging.
-
 MissionMap 2.0 preview:
 
 ![MissionMap 2.0 preview](<Mission Map/2.0/missionmap-2.0-preview.png>)
+
+**Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
+- U-boat positions, movement, depth, condition, and supplies.
+- Convoy and escort positions, names, damage, alerts, and activity.
+- Torpedoes, depth charges, gunfire, hits, sinkings, and other major events.
+- Seabed depth, chart drawings, mission settings, crew information, and player join/leave activity.
+
+A 3D replay viewer is included at [`Mission Map/pre-2.0/missionmap.html`](<Mission Map/pre-2.0/missionmap.html>) — drop a mission JSON onto it to review the patrol. It shows the boats, convoy, torpedoes, routes, depths, chart drawings, hits, and other important events on an interactive map. You can follow individual U-boats, measure distances and times, inspect attacks, and see when escorts are searching or engaging.
 
 **Discord auto-post:** MissionMap can automatically post the finished mission JSON, plus optional summary, roster, and settings files, to a Discord channel via webhook. It's off by default and configured through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it.
 
