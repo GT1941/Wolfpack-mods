@@ -5231,10 +5231,39 @@ function buildChartDrawings() {
     return THREE.MathUtils.radToDeg(Math.atan2(-dz, dx));
   };
 
-  // WebGL ignores LineBasicMaterial.linewidth on most desktop platforms.
-  // Use a world-space quad when the recorder supplies the LineRenderer width;
-  // old recordings retain their original one-pixel THREE.Line fallback.
-  const makeChartSegment = (x1, z1, x2, z2, width, col, opacity) => {
+  // W_MapTools.lineMaterials uses:
+  //   0 = thin, 1 = thick, 2 = dashed.
+  // The recorder captures this as `mat`. WebGL ignores requested linewidth
+  // on ordinary lines, which is useful for the game's one-pixel thin style;
+  // thick remains a world-space quad, while dashed uses LineDashedMaterial.
+  const makeChartSegment = (x1, z1, x2, z2, width, materialIndex, col, opacity) => {
+    const makeLineGeometry = () => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(
+        new Float32Array([x1, Y, z1, x2, Y, z2]), 3));
+      return geo;
+    };
+
+    if (materialIndex === 0) {
+      return new THREE.Line(makeLineGeometry(), new THREE.LineBasicMaterial({
+        color: col, transparent: true, opacity, depthWrite: false,
+      }));
+    }
+
+    if (materialIndex === 2) {
+      const line = new THREE.Line(makeLineGeometry(), new THREE.LineDashedMaterial({
+        color: col, transparent: true, opacity, depthWrite: false,
+        dashSize: 6, gapSize: 4,
+      }));
+      line.computeLineDistances();
+      line.userData.chartStroke = {
+        type: "dashedSegment",
+        dashPx: 6, gapPx: 4,
+        appliedDashWorld: 6, appliedGapWorld: 4,
+      };
+      return line;
+    }
+
     if (typeof width === "number" && width > 0) {
       const dx = x2 - x1, dz = z2 - z1;
       const len = Math.hypot(dx, dz) || 1;
@@ -5254,14 +5283,12 @@ function buildChartDrawings() {
       mesh.userData.chartStroke = {
         type: "segment", x1, z1, x2, z2,
         authoredWidth: width, appliedWidth: width,
+        maxPx: materialIndex === 1 ? 2.5 : CHART_STROKE_MAX_PX,
         cx: (x1 + x2) * 0.5, cz: (z1 + z2) * 0.5,
       };
       return mesh;
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(
-      new Float32Array([x1, Y, z1, x2, Y, z2]), 3));
-    return new THREE.Line(geo, new THREE.LineBasicMaterial({
+    return new THREE.Line(makeLineGeometry(), new THREE.LineBasicMaterial({
       color: col, transparent: true, opacity, depthWrite: false,
     }));
   };
@@ -5406,7 +5433,9 @@ function buildChartDrawings() {
       // coordinate system as samples and ship positions.
       const ex = (typeof d.x2 === "number") ? d.x2 : d.x;
       const ez = (typeof d.z2 === "number") ? d.z2 : d.z;
-      const ln = makeChartSegment(d.x, d.z, ex, ez, d.wd, baseColHex, baseOpacity);
+      const lineMaterial = (typeof d.mat === "number") ? d.mat : null;
+      const ln = makeChartSegment(
+        d.x, d.z, ex, ez, d.wd, lineMaterial, baseColHex, baseOpacity);
       ln.renderOrder = -6;
       addChartObj(ln);
     }
@@ -5647,8 +5676,25 @@ function updateChartDrawingSizing() {
     }
 
     const stroke = obj.userData.chartStroke;
-    if (stroke && stroke.authoredWidth > 0) {
-      const width = Math.min(stroke.authoredWidth, worldPerPx * CHART_STROKE_MAX_PX);
+    if (stroke && stroke.type === "dashedSegment") {
+      // Wolfpack keeps the dash cadence visually stable as the chart zooms.
+      // Convert the desired screen-pixel pattern back to world units for
+      // Three.js's world-space LineDashedMaterial.
+      const dashWorld = Math.max(0.01, worldPerPx * stroke.dashPx);
+      const gapWorld = Math.max(0.01, worldPerPx * stroke.gapPx);
+      if (Math.abs(dashWorld - stroke.appliedDashWorld) >
+            Math.max(0.02, stroke.appliedDashWorld * 0.03) ||
+          Math.abs(gapWorld - stroke.appliedGapWorld) >
+            Math.max(0.02, stroke.appliedGapWorld * 0.03)) {
+        obj.material.dashSize = dashWorld;
+        obj.material.gapSize = gapWorld;
+        stroke.appliedDashWorld = dashWorld;
+        stroke.appliedGapWorld = gapWorld;
+      }
+    }
+    else if (stroke && stroke.authoredWidth > 0) {
+      const maxPx = stroke.maxPx || CHART_STROKE_MAX_PX;
+      const width = Math.min(stroke.authoredWidth, worldPerPx * maxPx);
       if (Math.abs(width - stroke.appliedWidth) > Math.max(0.02, stroke.appliedWidth * 0.03)) {
         if (stroke.type === "segment") setChartSegmentWidth(obj, stroke, width);
         else if (stroke.type === "ring") setChartRingWidth(obj, stroke, width);
