@@ -320,10 +320,8 @@
     cursor: pointer; font-size: 12px;
   }
   #displayBody label.toggle input { cursor: pointer; }
-  /* Display panel stacks rows vertically. Label sizes use stepped,
-     separate controls for U-boats and surface ships: the old shared
-     0.5x-10x slider was too coarse at useful sizes and let convoy
-     clutter changes make the U-boat labels enormous. */
+  /* Display panel stacks rows vertically. U-boats and surface ships retain
+     independent sizing, exposed as two sliders. */
   #displayBody { display: flex; flex-direction: column; gap: 6px; }
   #displayBody .labelControls {
     display: flex; flex-direction: column; gap: 5px;
@@ -340,26 +338,24 @@
     border: 0; padding: 0; font: inherit; cursor: pointer;
   }
   #displayBody .labelControlHead button:hover { color: var(--amber); }
-  #displayBody .labelStepRow {
+  #displayBody .labelSliderRow {
     display: grid;
-    grid-template-columns: 1fr 30px 54px 30px;
-    gap: 4px;
+    grid-template-columns: 52px minmax(90px, 1fr) 42px;
+    gap: 6px;
     align-items: center;
     color: var(--dim);
     font-size: 11px;
   }
-  #displayBody .labelStepRow button {
-    background: var(--bg); color: var(--fg);
-    border: 1px solid var(--line); border-radius: 3px;
-    padding: 2px 0; font: inherit; cursor: pointer;
-  }
-  #displayBody .labelStepRow button:hover { border-color: var(--amber); }
-  #displayBody .labelStepRow button:disabled {
-    color: var(--dim); opacity: 0.45; cursor: default;
+  #displayBody .labelSliderRow input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--amber);
   }
   #displayBody .labelStepValue {
     color: var(--fg);
-    text-align: center;
+    text-align: right;
     font-variant-numeric: tabular-nums;
   }
   /* User-resizable hit table: default 36vh, drag the bottom-right corner
@@ -1100,18 +1096,18 @@
                 <span>Floating labels</span>
                 <button id="labelScaleReset" type="button" title="Reset both label sizes to 100%">Reset</button>
               </div>
-              <div class="labelStepRow">
+              <label class="labelSliderRow">
                 <span>U-boats</span>
-                <button id="uboatLabelDown" type="button" title="Smaller U-boat labels">−</button>
-                <span id="uboatLabelScaleVal" class="labelStepValue">100%</span>
-                <button id="uboatLabelUp" type="button" title="Larger U-boat labels">+</button>
-              </div>
-              <div class="labelStepRow">
+                <input id="uboatLabelScale" type="range" min="50" max="500" step="25" value="100"
+                       title="U-boat floating-label size">
+                <output id="uboatLabelScaleVal" class="labelStepValue" for="uboatLabelScale">100%</output>
+              </label>
+              <label class="labelSliderRow">
                 <span>Ships</span>
-                <button id="shipLabelDown" type="button" title="Smaller merchant and escort labels">−</button>
-                <span id="shipLabelScaleVal" class="labelStepValue">100%</span>
-                <button id="shipLabelUp" type="button" title="Larger merchant and escort labels">+</button>
-              </div>
+                <input id="shipLabelScale" type="range" min="50" max="500" step="25" value="100"
+                       title="Merchant and escort floating-label size">
+                <output id="shipLabelScaleVal" class="labelStepValue" for="shipLabelScale">100%</output>
+              </label>
             </div>
             <label class="toggle" title="Multiply all vertical positions (depth, draught) by 5× so dives and torpedo running depth are readable at top-down camera angles. Turn off for true-scale ship proportions (surface ships no longer look chunky; loses the visual torpedo-vs-keel alignment cue).">
               <input type="checkbox" id="depthStretchToggle" checked> Stretch depth ×5
@@ -11533,16 +11529,16 @@ _wireTrailToggle("keepDepthChargesOn", "depthCharges");
 _wireTrailToggle("fleeIconsOn", "fleeIcons");
 _wireTrailToggle("hpBarsOn", "health");
 
-// Checkboxes retain keyboard focus after a mouse click. The global WASD
-// handler intentionally ignores focused inputs, so clicking any Display
-// option otherwise disables navigation shortcuts until the user clicks the
-// map. Release only Display-checkbox focus after its value has changed;
-// text/time inputs and the timeline keep their normal keyboard behaviour.
+// Display controls retain keyboard focus after a click/drag. The global WASD
+// handler intentionally ignores focused inputs, so release checkbox/range
+// focus after a completed change; text/time inputs and the timeline keep
+// their normal keyboard behaviour.
 const _displayBody = $("displayBody");
 if (_displayBody) {
   _displayBody.addEventListener("change", (ev) => {
     const target = ev.target;
-    if (target && target.matches && target.matches('input[type="checkbox"]')) {
+    if (target && target.matches &&
+        target.matches('input[type="checkbox"], input[type="range"]')) {
       target.blur();
     }
   });
@@ -11683,16 +11679,14 @@ let tiltAmplifyOn = false;
 const TILT_AMPLIFY_STORE_KEY = "missionmap.tiltAmplify.v1";
 const _tiltAmpToggleEl = $("tiltAmplifyToggle");
 
-// Separate, stepped label sizing. The former shared 0.5×–10× range was
-// difficult to tune and coupled dense convoy labels to the tactically more
-// important U-boat labels. Percentages are intentionally bounded and move in
-// 25% increments so each click has a predictable effect.
+// Separate label sizing sliders. They retain the useful 25% increments and
+// browser-local persistence without coupling convoy labels to U-boat labels.
 let uboatLabelScale = 1.0;
 let shipLabelScale  = 1.0;
 const UBOAT_LABEL_SCALE_STORE_KEY = "missionmap.uboatLabelScale.v2";
 const SHIP_LABEL_SCALE_STORE_KEY  = "missionmap.shipLabelScale.v2";
 const LEGACY_LABEL_SCALE_STORE_KEY = "missionmap.labelScale.v1";
-const LABEL_SCALE_MIN = 0.6;
+const LABEL_SCALE_MIN = 0.5;
 const LABEL_SCALE_MAX = 5.0;
 const LABEL_SCALE_STEP = 0.25;
 
@@ -11712,12 +11706,10 @@ function paintLabelScaleControls() {
   const s = $("shipLabelScaleVal");
   if (u) u.textContent = Math.round(uboatLabelScale * 100) + "%";
   if (s) s.textContent = Math.round(shipLabelScale * 100) + "%";
-  const ud = $("uboatLabelDown"), uu = $("uboatLabelUp");
-  const sd = $("shipLabelDown"),  su = $("shipLabelUp");
-  if (ud) ud.disabled = uboatLabelScale <= LABEL_SCALE_MIN;
-  if (uu) uu.disabled = uboatLabelScale >= LABEL_SCALE_MAX;
-  if (sd) sd.disabled = shipLabelScale <= LABEL_SCALE_MIN;
-  if (su) su.disabled = shipLabelScale >= LABEL_SCALE_MAX;
+  const ur = $("uboatLabelScale");
+  const sr = $("shipLabelScale");
+  if (ur) ur.value = String(Math.round(uboatLabelScale * 100));
+  if (sr) sr.value = String(Math.round(shipLabelScale * 100));
 }
 function setLabelScale(kind, value) {
   const v = clampLabelScale(value);
@@ -11743,18 +11735,22 @@ function setLabelScale(kind, value) {
   uboatLabelScale = readLabelScale(UBOAT_LABEL_SCALE_STORE_KEY, legacy);
   shipLabelScale  = readLabelScale(SHIP_LABEL_SCALE_STORE_KEY, legacy);
 }
-const labelButton = (id, fn) => {
+const wireLabelSlider = (id, kind) => {
   const el = $(id);
-  if (el) el.addEventListener("click", fn);
+  if (!el) return;
+  el.addEventListener("input", () => {
+    setLabelScale(kind, parseFloat(el.value) / 100);
+  });
 };
-labelButton("uboatLabelDown", () => setLabelScale("uboat", uboatLabelScale - LABEL_SCALE_STEP));
-labelButton("uboatLabelUp",   () => setLabelScale("uboat", uboatLabelScale + LABEL_SCALE_STEP));
-labelButton("shipLabelDown",  () => setLabelScale("ship",  shipLabelScale - LABEL_SCALE_STEP));
-labelButton("shipLabelUp",    () => setLabelScale("ship",  shipLabelScale + LABEL_SCALE_STEP));
-labelButton("labelScaleReset", () => {
-  setLabelScale("uboat", 1.0);
-  setLabelScale("ship", 1.0);
-});
+wireLabelSlider("uboatLabelScale", "uboat");
+wireLabelSlider("shipLabelScale", "ship");
+const labelScaleReset = $("labelScaleReset");
+if (labelScaleReset) {
+  labelScaleReset.addEventListener("click", () => {
+    setLabelScale("uboat", 1.0);
+    setLabelScale("ship", 1.0);
+  });
+}
 paintLabelScaleControls();
 if (_tiltAmpToggleEl) {
   let stored = null;
