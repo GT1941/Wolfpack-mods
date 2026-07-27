@@ -527,7 +527,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-05-23ac</span></h1>
+    <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">build 2026-07-27 · <a href="https://github.com/GT1941/Wolfpack-mods" target="_blank" rel="noopener" style="color:var(--dim)" title="Downloads, docs and updates on GitHub">GT1941/Wolfpack-mods</a></span></h1>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <span class="meta" id="recVersion" title="MissionMap recorder version stamped into the JSON header. Pre-1.9.6 recordings don't carry this field — shown as 'pre-1.9.6'.">—</span>
     <span class="meta">Samples: <span id="nSamples">0</span> · Events: <span id="nEvents">0</span></span>
@@ -770,7 +770,12 @@ function applyChartVisibility() {
   if (!scene3d) return;
   for (const obj of scene3d.children) {
     if (obj.userData && obj.userData.kind === "chart") {
-      obj.visible = chartOwnerVisible(obj.userData.chartOwner, obj.userData.chartT);
+      const eligible = chartOwnerVisible(obj.userData.chartOwner, obj.userData.chartT);
+      if (obj.userData.chartOwnerEligible !== eligible) {
+        obj.userData.chartOwnerEligible = eligible;
+        _chartDeclutterSignature = "";
+      }
+      obj.visible = eligible && !obj.userData.chartDeclutterHidden;
     }
   }
   if (typeof markRender3DDirty === "function") markRender3DDirty();
@@ -1115,6 +1120,16 @@ function loadData(json) {
     // the mirrored coordinate space along with ev.x.
     if (typeof ev.x1 === "number") ev.x1 = -ev.x1;
     if (typeof ev.x2 === "number") ev.x2 = -ev.x2;
+    // Chart labels have their own world-space positions. Newer 2.0
+    // recordings also carry their TextMesh baseline rotation; reflect both
+    // along with the drawing so the legacy player does not leave navigation
+    // text on the opposite side of the chart.
+    if (typeof ev.lx  === "number") ev.lx  = -ev.lx;
+    if (typeof ev.elx === "number") ev.elx = -ev.elx;
+    if (typeof ev.lrot === "number")
+      ev.lrot = ((180 - ev.lrot) % 360 + 360) % 360;
+    if (typeof ev.elrot === "number")
+      ev.elrot = ((180 - ev.elrot) % 360 + 360) % 360;
     // Chart time-node events use `h` as the hour-of-day; every other
     // event that carries `h` uses it as a heading. Skip the negation
     // for time-nodes so labels like "8:15" render correctly.
@@ -3868,24 +3883,185 @@ function buildChartDrawings() {
   const mapBounds = (data && data.map) ? data.map : null;
   const mapW = mapBounds ? (mapBounds.maxX - mapBounds.minX) : 10000;
 
-  // Sprite for "text" / "timenode" drawings.
-  const makeTextSprite = (txt, col) => {
+  // Newer recorders store the chart TextMesh's text in `txt` (because `t`
+  // is the event timestamp), plus its world position, size and rotation.
+  // Use a flat chart-plane mesh instead of a billboard sprite so navigation
+  // labels stay attached to their authored drawing while the camera orbits.
+  const makeChartTextTexture = (txt, col) => {
+    const lines = txt.toString().replace(/\r/g, "").split("\n").slice(0, 6);
     const cvs = document.createElement("canvas");
-    cvs.width = 512; cvs.height = 128;
-    const c2d = cvs.getContext("2d");
-    c2d.font = "bold 64px ui-monospace,Consolas,monospace";
+    let c2d = cvs.getContext("2d");
+    c2d.font = "64px Arial,Helvetica,sans-serif";
+    let textW = 1;
+    for (const line of lines) textW = Math.max(textW, Math.ceil(c2d.measureText(line).width));
+    cvs.width = Math.max(96, textW + 32);
+    cvs.height = Math.max(96, lines.length * 72 + 24);
+    c2d = cvs.getContext("2d");
+    c2d.font = "64px Arial,Helvetica,sans-serif";
     c2d.textAlign = "left";
     c2d.textBaseline = "middle";
     c2d.lineJoin = "round";
     c2d.miterLimit = 2;
-    c2d.lineWidth = 8;
-    c2d.strokeStyle = "rgba(0,0,0,0.55)";
+    c2d.lineWidth = 3;
+    c2d.strokeStyle = "rgba(0,0,0,0.40)";
     c2d.fillStyle   = col;
-    c2d.strokeText(txt, 16, 64);
-    c2d.fillText(txt, 16, 64);
+    for (let i = 0; i < lines.length; i++) {
+      const y = 12 + (i + 0.5) * 72;
+      c2d.strokeText(lines[i], 16, y);
+      c2d.fillText(lines[i], 16, y);
+    }
     const tex = new THREE.CanvasTexture(cvs);
     tex.minFilter = THREE.LinearFilter;
-    return tex;
+    tex.flipY = true;
+    tex.center.set(0.5, 0.5);
+    tex.rotation = Math.PI;
+    tex.needsUpdate = true;
+    return { tex, aspect: cvs.width / cvs.height, lineCount: lines.length };
+  };
+
+  const makeChartLabel = (txt, col, x, z, worldW, worldH, fallbackW, rotationDeg = 0) => {
+    const entry = makeChartTextTexture(txt, col);
+    const haveW = typeof worldW === "number" && worldW > 0;
+    const haveH = typeof worldH === "number" && worldH > 0;
+    // Renderer.bounds is axis-aligned in world space. For rotated TextMeshes
+    // recover an intrinsic plane with the canvas aspect ratio whose projected
+    // bounds best match the recorded width/height. This is stable at 45°,
+    // where directly solving the two AABB equations becomes singular.
+    const upright = ((rotationDeg + 90) % 180 + 180) % 180 - 90;
+    let w, h;
+    if (haveW && haveH && Math.abs(upright) > 2) {
+      const a = Math.abs(THREE.MathUtils.degToRad(upright));
+      const c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+      const aspect = Math.max(0.2, entry.aspect);
+      const coefW = aspect * c + s;
+      const coefH = aspect * s + c;
+      h = (worldW * coefW + worldH * coefH) /
+          Math.max(0.001, coefW * coefW + coefH * coefH);
+      w = h * aspect;
+    }
+    else if (haveW && haveH) { w = worldW; h = worldH; }
+    else if (haveH)          { h = worldH; w = h * entry.aspect; }
+    else if (haveW)          { w = worldW; h = w / entry.aspect; }
+    else                     { w = fallbackW; h = w / entry.aspect; }
+    const geo = new THREE.PlaneGeometry(w, h);
+    geo.rotateX(-Math.PI * 0.5);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      map: entry.tex, transparent: true, opacity: 0.38,
+      depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+    }));
+    mesh.position.set(x, Y + 0.05, z);
+    mesh.rotation.y = THREE.MathUtils.degToRad(upright);
+    mesh.renderOrder = 5;
+    mesh.userData.chartLabelBaseH = h;
+    mesh.userData.chartLabelBaseOpacity = 0.38;
+    mesh.userData.chartLabelTextLength = txt.toString().length;
+    mesh.userData.chartLabelMaxPx = Math.max(22, entry.lineCount * 22);
+    return mesh;
+  };
+
+  const chartLineTextRotation = (d) => {
+    if (typeof d.x2 !== "number" || typeof d.z2 !== "number") return 0;
+    const dx = d.x2 - d.x, dz = d.z2 - d.z;
+    if (Math.hypot(dx, dz) < 0.001) return 0;
+    return THREE.MathUtils.radToDeg(Math.atan2(-dz, dx));
+  };
+
+  // WebGL ignores LineBasicMaterial.linewidth on most desktop platforms.
+  // When the recording contains Wolfpack's authored stroke width, use a
+  // world-space quad/ring; legacy recordings keep a one-pixel line fallback.
+  const makeChartSegment = (x1, z1, x2, z2, width, col, opacity) => {
+    if (typeof width === "number" && width > 0) {
+      const dx = x2 - x1, dz = z2 - z1;
+      const len = Math.hypot(dx, dz) || 1;
+      const px = -dz / len * width * 0.5;
+      const pz =  dx / len * width * 0.5;
+      const verts = new Float32Array([
+        x1 + px, Y, z1 + pz,  x1 - px, Y, z1 - pz,
+        x2 - px, Y, z2 - pz,  x1 + px, Y, z1 + pz,
+        x2 - px, Y, z2 - pz,  x2 + px, Y, z2 + pz,
+      ]);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: col, transparent: opacity < 1, opacity,
+        depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mesh.userData.chartStroke = {
+        type: "segment", x1, z1, x2, z2,
+        authoredWidth: width, appliedWidth: width,
+        cx: (x1 + x2) * 0.5, cz: (z1 + z2) * 0.5,
+      };
+      return mesh;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(
+      new Float32Array([x1, Y, z1, x2, Y, z2]), 3));
+    return new THREE.Line(geo, new THREE.LineBasicMaterial({
+      color: col, transparent: true, opacity, depthWrite: false,
+    }));
+  };
+
+  const makeChartRing = (x, z, radius, width, col, opacity) => {
+    if (typeof width === "number" && width > 0) {
+      const inner = Math.max(0, radius - width * 0.5);
+      const outer = radius + width * 0.5;
+      const geo = new THREE.RingGeometry(inner, outer, 64);
+      geo.rotateX(-Math.PI * 0.5);
+      geo.translate(x, Y, z);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: col, transparent: opacity < 1, opacity,
+        depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mesh.userData.chartStroke = {
+        type: "ring", x, z, radius,
+        authoredWidth: width, appliedWidth: width,
+        cx: x, cz: z,
+      };
+      return mesh;
+    }
+    const segs = 64;
+    const pos = new Float32Array((segs + 1) * 3);
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      pos[i * 3] = x + radius * Math.cos(a);
+      pos[i * 3 + 1] = Y;
+      pos[i * 3 + 2] = z + radius * Math.sin(a);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    return new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
+      color: col, transparent: true, opacity, depthWrite: false,
+    }));
+  };
+
+  const makeChartSymbol = (mat, col, span, x, z, opacity) => {
+    const cvs = document.createElement("canvas");
+    cvs.width = 256; cvs.height = 256;
+    const c = cvs.getContext("2d");
+    c.strokeStyle = col;
+    c.fillStyle = col;
+    c.lineWidth = 24;
+    c.lineCap = "square";
+    if (mat === 1) {
+      c.beginPath(); c.arc(128, 128, 92, 0, Math.PI * 2); c.stroke();
+    } else if (mat === 2) {
+      c.fillRect(48, 48, 160, 160);
+    } else {
+      c.beginPath(); c.moveTo(42, 42); c.lineTo(214, 214);
+      c.moveTo(42, 214); c.lineTo(214, 42); c.stroke();
+    }
+    const tex = new THREE.CanvasTexture(cvs);
+    tex.minFilter = THREE.LinearFilter;
+    const geo = new THREE.PlaneGeometry(span, span);
+    geo.rotateX(-Math.PI * 0.5);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, opacity,
+      depthWrite: false, side: THREE.DoubleSide,
+    }));
+    mesh.position.set(x, Y, z);
+    mesh.userData.chartSymbolBaseSpan = span;
+    mesh.userData.chartSymbolTargetPx = 18;
+    return mesh;
   };
 
   for (const d of state.values()) {
@@ -3901,15 +4077,12 @@ function buildChartDrawings() {
     const rawBoatCol = boatKey >= 0
       ? uboatColors(null, "u" + boatKey).fill
       : "#9fb5cc";
-    // Desaturate the boat tint so chart drawings read as muted /
-    // sketched, not bright. Without this, a player's pencil
-    // drawings rendered at full boat colour are easy to mistake
-    // for the boat's TRAIL line at a glance. Blending 60 % toward
-    // a mid grey keeps enough hue to tell "this is U-96's
-    // drawing" but pushes the value into "paper-pencil" territory.
-    const blended = new THREE.Color(rawBoatCol).lerp(new THREE.Color(0x888888), 0.6);
-    const baseColHex = blended;
+    // Match 2.0's translucent pencil treatment while retaining enough of
+    // each boat's hue to distinguish ownership on the dark chart.
+    const blended = new THREE.Color(rawBoatCol).lerp(new THREE.Color(0x888888), 0.28);
     const baseCol = "#" + blended.getHexString();
+    const baseColHex = new THREE.Color(baseCol);
+    const baseOpacity = 0.26;
     const kind = d.k || "point";
 
     // Filter out Wolfpack's reusable preview shapes — the
@@ -3928,7 +4101,9 @@ function buildChartDrawings() {
     } else if (kind === "circle") {
       if (!(d.r > 1)) continue;
     } else if (kind === "text") {
-      const txt = (d.t || "").toString();
+      const txt = (typeof d.txt === "string"
+        ? d.txt
+        : (typeof d.t === "string" ? d.t : "")).toString();
       if (txt.length === 0 || txt === "sketch text\r") continue;
     }
 
@@ -3945,7 +4120,9 @@ function buildChartDrawings() {
       // fall back to player-slot owner for pre-1.9.27 recordings.
       obj.userData.chartOwner = boatKey;
       obj.userData.chartT = chartT;
-      obj.visible = chartOwnerVisible(boatKey, chartT);
+      obj.userData.chartOwnerEligible = chartOwnerVisible(boatKey, chartT);
+      obj.userData.chartDeclutterHidden = false;
+      obj.visible = obj.userData.chartOwnerEligible;
       scene3d.add(obj);
     };
 
@@ -3957,47 +4134,30 @@ function buildChartDrawings() {
       // coordinate system as samples and ship positions.
       const ex = (typeof d.x2 === "number") ? d.x2 : d.x;
       const ez = (typeof d.z2 === "number") ? d.z2 : d.z;
-      const buf = new Float32Array([d.x, Y, d.z, ex, Y, ez]);
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(buf, 3));
-      const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({
-        color: baseColHex, transparent: true, opacity: 0.55,
-        depthWrite: false,
-      }));
+      const ln = makeChartSegment(d.x, d.z, ex, ez, d.wd, baseColHex, baseOpacity);
       ln.renderOrder = -6;
       addChartObj(ln);
     }
     else if (kind === "circle") {
-      const segs = 64;
       const r = Math.max(1, d.r || 0);
-      const pos = new Float32Array((segs + 1) * 3);
-      for (let i = 0; i <= segs; i++) {
-        const a = (i / segs) * Math.PI * 2;
-        pos[i * 3]     = d.x + r * Math.cos(a);
-        pos[i * 3 + 1] = Y;
-        pos[i * 3 + 2] = d.z + r * Math.sin(a);
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-      const ring = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
-        color: baseColHex, transparent: true, opacity: 0.55,
-        depthWrite: false,
-      }));
+      const ring = makeChartRing(d.x, d.z, r, d.wd, baseColHex, baseOpacity);
       ring.renderOrder = -6;
       addChartObj(ring);
     }
     else if (kind === "text") {
-      const txt = (d.t || "").toString().substring(0, 40);
+      const txt = (typeof d.txt === "string"
+        ? d.txt
+        : (typeof d.t === "string" ? d.t : "")).toString().substring(0, 40);
       if (txt.length === 0) continue;
-      const spr = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: makeTextSprite(txt, baseCol),
-        transparent: true, opacity: 0.85,
-        depthWrite: false, depthTest: false,
-      }));
       const sp = Math.max(300, mapW * 0.04);
-      spr.scale.set(sp, sp * 128 / 512, 1);
-      spr.position.set(d.x, Y + 0.05, d.z);
-      spr.renderOrder = 5;
+      const spr = makeChartLabel(
+        txt, baseCol,
+        (typeof d.lx === "number") ? d.lx : d.x,
+        (typeof d.lz === "number") ? d.lz : d.z,
+        // Empty-caret samples can record an unusably narrow width. Preserve
+        // the final height and derive width from the actual font texture.
+        null, d.lhe, sp,
+        (typeof d.lrot === "number") ? d.lrot : 0);
       addChartObj(spr);
     }
     else if (kind === "timenode") {
@@ -4021,102 +4181,235 @@ function buildChartDrawings() {
       //   tm 0 (None)      → no label
       //   tm 1 (Timestamp) → "H:MM"
       //   tm 2 (TimeCalc)  → "+H:MM" prefix marks computed deltas
-      const r = Math.max(25, mapW * 0.0015);
+      const r = (typeof d.sw === "number" && d.sw > 0)
+        ? d.sw * 0.5 : Math.max(25, mapW * 0.0015);
       const mat = (typeof d.mat === "number") ? d.mat : 0;
 
-      if (mat === 1) {
-        // Circle (hollow ring). LineLoop so the path closes cleanly.
-        const segs = 32;
-        const pos = new Float32Array((segs + 1) * 3);
-        for (let i = 0; i <= segs; i++) {
-          const a = (i / segs) * Math.PI * 2;
-          pos[i * 3]     = d.x + r * Math.cos(a);
-          pos[i * 3 + 1] = Y;
-          pos[i * 3 + 2] = d.z + r * Math.sin(a);
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-        const ring = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({
-          color: baseColHex, transparent: true, opacity: 0.7,
-          depthWrite: false,
-        }));
-        ring.renderOrder = -6;
-        addChartObj(ring);
-      } else if (mat === 2) {
-        // Filled square — represents the in-game solid black-square
-        // symbol. PlaneGeometry rotated to lie flat on the chart
-        // plane (XY → XZ). DoubleSide so it stays visible from any
-        // 3-D camera angle. Slightly smaller than the X (1.6× r as
-        // a side, vs the X's 2× r diagonal span) so the filled
-        // weight doesn't dominate next to outline markers.
-        const side = r * 1.6;
-        const sq = new THREE.PlaneGeometry(side, side);
-        sq.rotateX(-Math.PI * 0.5);
-        sq.translate(d.x, Y, d.z);
-        const m = new THREE.Mesh(sq, new THREE.MeshBasicMaterial({
-          color: baseColHex, transparent: true, opacity: 0.7,
-          depthWrite: false, side: THREE.DoubleSide,
-        }));
-        m.renderOrder = -6;
-        addChartObj(m);
-      } else {
-        // Default mat 0 → X cross, drawn as two line segments.
-        const segs = [
-          [d.x - r, d.z - r, d.x + r, d.z + r],
-          [d.x - r, d.z + r, d.x + r, d.z - r],
-        ];
-        for (const [x1, z1, x2, z2] of segs) {
-          const buf = new Float32Array([x1, Y, z1, x2, Y, z2]);
-          const geo = new THREE.BufferGeometry();
-          geo.setAttribute("position", new THREE.BufferAttribute(buf, 3));
-          const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({
-            color: baseColHex, transparent: true, opacity: 0.7,
-            depthWrite: false,
-          }));
-          ln.renderOrder = -6;
-          addChartObj(ln);
-        }
-      }
+      // A centred chart-plane texture reproduces X/ring/square symbols and
+      // lets updateChartDrawingSizing() keep them at a stable screen size.
+      const symbolSpan = (typeof d.sw === "number" && d.sw > 0) ? d.sw : r * 2;
+      const symbol = makeChartSymbol(mat, baseCol, symbolSpan, d.x, d.z, baseOpacity);
+      symbol.renderOrder = -6;
+      addChartObj(symbol);
       // Default to Timestamp behaviour for pre-1.9.26 recordings
       // (no tm field) so existing replays still show H:MM. New
       // recordings honour the explicit tm value.
       const tm = (typeof d.tm === "number") ? d.tm : 1;
       const haveHMS = (typeof d.h === "number" || typeof d.m === "number" || typeof d.s === "number");
-      if (tm > 0 && haveHMS) {
+      let lbl = (typeof d.lbl === "string") ? d.lbl : "";
+      if (!lbl && tm > 0 && haveHMS) {
         const h = (d.h | 0).toString();
         const m = (d.m | 0).toString().padStart(2, "0");
-        const lbl = (tm === 2 ? "+" : "") + h + ":" + m;
-        const spr = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: makeTextSprite(lbl, baseCol),
-          transparent: true, opacity: 0.85,
-          depthWrite: false, depthTest: false,
-        }));
+        const s = (d.s | 0).toString().padStart(2, "0");
+        lbl = (tm === 2 ? "+" : "") + h + ":" + m + ":" + s;
+      }
+      if (tm > 0 && lbl) {
         const sp = Math.max(180, mapW * 0.022);
-        spr.scale.set(sp, sp * 128 / 512, 1);
-        spr.position.set(d.x + r * 1.3, Y + 0.05, d.z - r * 0.7);
-        spr.renderOrder = 5;
+        const spr = makeChartLabel(
+          lbl, baseCol,
+          (typeof d.lx === "number") ? d.lx : d.x + r * 1.3,
+          (typeof d.lz === "number") ? d.lz : d.z - r * 0.7,
+          d.lwi, d.lhe, sp,
+          (typeof d.lrot === "number") ? d.lrot : 0);
         addChartObj(spr);
       }
     }
     else {
-      // Plain point — small filled cross on the surface.
-      const r = Math.max(35, mapW * 0.002);
-      const segs = [
-        [d.x - r, d.z, d.x + r, d.z],
-        [d.x, d.z - r, d.x, d.z + r],
-      ];
-      for (const [x1, z1, x2, z2] of segs) {
-        const buf = new Float32Array([x1, Y, z1, x2, Y, z2]);
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(buf, 3));
-        const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({
-          color: baseColHex, transparent: true, opacity: 0.6,
-          depthWrite: false,
-        }));
-        ln.renderOrder = -6;
-        addChartObj(ln);
+      // Plain navigation points use the recorded symbol/material too and
+      // scale the same way as time nodes.
+      const span = (typeof d.sw === "number" && d.sw > 0)
+        ? d.sw : Math.max(70, mapW * 0.004);
+      const symbol = makeChartSymbol(
+        (typeof d.mat === "number") ? d.mat : 0,
+        baseCol, span, d.x, d.z, baseOpacity);
+      symbol.renderOrder = -6;
+      addChartObj(symbol);
+    }
+
+    // Lines and circles can have both an inherited time label and the
+    // endpoint distance/bearing label. The old player ignored both, which
+    // made navigation plots from 2.0 recordings look incomplete.
+    if ((kind === "line" || kind === "circle") &&
+        typeof d.lbl === "string" && d.lbl.length) {
+      const sp = Math.max(180, mapW * 0.022);
+      const fallbackRot = kind === "line" ? chartLineTextRotation(d) : 0;
+      const labelRotation = (typeof d.lrot === "number") ? d.lrot : fallbackRot;
+      const spr = makeChartLabel(
+        d.lbl, baseCol,
+        (typeof d.lx === "number") ? d.lx : d.x,
+        (typeof d.lz === "number") ? d.lz : d.z,
+        d.lwi, d.lhe, sp,
+        labelRotation);
+      addChartObj(spr);
+    }
+    if ((kind === "line" || kind === "circle") &&
+        typeof d.elbl === "string" && d.elbl.length) {
+      const fallbackX = (typeof d.x2 === "number") ? d.x2 : d.x;
+      const fallbackZ = (typeof d.z2 === "number") ? d.z2 : d.z;
+      const sp = Math.max(180, mapW * 0.022);
+      const fallbackRot = kind === "line" ? chartLineTextRotation(d) : 0;
+      const labelRotation = (typeof d.elrot === "number") ? d.elrot : fallbackRot;
+      const spr = makeChartLabel(
+        d.elbl, baseCol,
+        (typeof d.elx === "number") ? d.elx : fallbackX,
+        (typeof d.elz === "number") ? d.elz : fallbackZ,
+        d.ewi, d.ehe, sp,
+        labelRotation);
+      addChartObj(spr);
+    }
+  }
+  _chartDeclutterSignature = "";
+  updateChartDrawingSizing();
+}
+
+// Match the 2.0 player's zoom behaviour. Wolfpack records chart geometry in
+// world units, but at close inspection those widths and labels can cover much
+// of the screen. Preserve authored dimensions until a screen-space ceiling is
+// reached, then shrink presentation only (never endpoints, radii, or data).
+const CHART_STROKE_MAX_PX = 2.5;
+const _chartLabelCorner = new THREE.Vector3();
+var _chartDeclutterSignature = "";
+function chartWorldPerPixel() {
+  if (!camera3d || !renderer3d || !controls3d) return Infinity;
+  const canvas = renderer3d.domElement;
+  const screenH = Math.max(1, canvas.clientHeight || canvas.height || 1);
+  const dist = Math.max(1, controls3d.distance);
+  return (2 * dist * Math.tan((camera3d.fov || 50) * Math.PI / 360)) / screenH;
+}
+function setChartSegmentWidth(mesh, meta, width) {
+  const dx = meta.x2 - meta.x1, dz = meta.z2 - meta.z1;
+  const len = Math.hypot(dx, dz) || 1;
+  const px = -dz / len * width * 0.5;
+  const pz =  dx / len * width * 0.5;
+  const a = mesh.geometry.attributes.position.array;
+  a.set([
+    meta.x1 + px, 0.2, meta.z1 + pz,
+    meta.x1 - px, 0.2, meta.z1 - pz,
+    meta.x2 - px, 0.2, meta.z2 - pz,
+    meta.x1 + px, 0.2, meta.z1 + pz,
+    meta.x2 - px, 0.2, meta.z2 - pz,
+    meta.x2 + px, 0.2, meta.z2 + pz,
+  ]);
+  mesh.geometry.attributes.position.needsUpdate = true;
+  mesh.geometry.computeBoundingSphere();
+}
+function setChartRingWidth(mesh, meta, width) {
+  const inner = Math.max(0, meta.radius - width * 0.5);
+  const outer = meta.radius + width * 0.5;
+  const geo = new THREE.RingGeometry(inner, outer, 64);
+  geo.rotateX(-Math.PI * 0.5);
+  geo.translate(meta.x, 0.2, meta.z);
+  mesh.geometry.dispose();
+  mesh.geometry = geo;
+}
+function chartLabelScreenBox(obj, rect) {
+  const geo = obj.geometry;
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  const b = geo.boundingBox;
+  if (!b) return null;
+  obj.updateMatrixWorld(true);
+  const pts = [
+    [b.min.x, b.min.z], [b.min.x, b.max.z],
+    [b.max.x, b.min.z], [b.max.x, b.max.z],
+  ];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let inDepth = false;
+  for (const [x, z] of pts) {
+    _chartLabelCorner.set(x, 0, z).applyMatrix4(obj.matrixWorld).project(camera3d);
+    if (_chartLabelCorner.z >= -1 && _chartLabelCorner.z <= 1) inDepth = true;
+    const sx = (_chartLabelCorner.x * 0.5 + 0.5) * rect.width;
+    const sy = (-_chartLabelCorner.y * 0.5 + 0.5) * rect.height;
+    minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
+    minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
+  }
+  if (!inDepth || maxX < 0 || minX > rect.width || maxY < 0 || minY > rect.height)
+    return null;
+  const pad = 2;
+  return {
+    minX: Math.max(0, minX - pad),
+    minY: Math.max(0, minY - pad),
+    maxX: Math.min(rect.width,  maxX + pad),
+    maxY: Math.min(rect.height, maxY + pad),
+  };
+}
+function updateChartDrawingSizing() {
+  if (!scene3d || !camera3d || !renderer3d) return;
+  if (controls3d && controls3d._dragging) return;
+  const labels = [];
+  const worldPerPx = chartWorldPerPixel();
+  for (const obj of scene3d.children) {
+    if (!obj.userData || obj.userData.kind !== "chart") continue;
+
+    const baseH = obj.userData.chartLabelBaseH;
+    if (baseH > 0) {
+      const eligible = chartOwnerVisible(obj.userData.chartOwner, obj.userData.chartT);
+      obj.userData.chartOwnerEligible = eligible;
+      obj.visible = eligible && !obj.userData.chartDeclutterHidden;
+      obj.material.opacity = obj.userData.chartLabelBaseOpacity || 0.38;
+      if (!eligible) continue;
+      const maxWorldH = worldPerPx * (obj.userData.chartLabelMaxPx || 22);
+      const scale = Math.min(1, maxWorldH / baseH);
+      obj.scale.setScalar(scale);
+      labels.push(obj);
+    }
+
+    const symbolBaseSpan = obj.userData.chartSymbolBaseSpan;
+    if (symbolBaseSpan > 0) {
+      const targetWorldSpan = worldPerPx *
+        (obj.userData.chartSymbolTargetPx || 18);
+      obj.scale.setScalar(Math.max(0.02, targetWorldSpan / symbolBaseSpan));
+    }
+
+    const stroke = obj.userData.chartStroke;
+    if (stroke && stroke.authoredWidth > 0) {
+      const width = Math.min(stroke.authoredWidth, worldPerPx * CHART_STROKE_MAX_PX);
+      if (Math.abs(width - stroke.appliedWidth) >
+          Math.max(0.02, stroke.appliedWidth * 0.03)) {
+        if (stroke.type === "segment") setChartSegmentWidth(obj, stroke, width);
+        else if (stroke.type === "ring") setChartRingWidth(obj, stroke, width);
+        stroke.appliedWidth = width;
       }
     }
+  }
+
+  const canvas = renderer3d.domElement;
+  const rect = canvas.getBoundingClientRect();
+  const signature = [
+    controls3d ? controls3d.azimuthDeg.toFixed(2) : "",
+    controls3d ? controls3d.pitchDeg.toFixed(2) : "",
+    controls3d ? controls3d.distance.toFixed(1) : "",
+    Math.round(rect.width), Math.round(rect.height),
+    labels.length,
+  ].join("|");
+  if (signature === _chartDeclutterSignature) return;
+  _chartDeclutterSignature = signature;
+
+  camera3d.updateMatrixWorld(true);
+  camera3d.matrixWorldInverse.copy(camera3d.matrixWorld).invert();
+  for (const obj of labels) {
+    obj.userData.chartDeclutterHidden = false;
+    obj.visible = true;
+  }
+
+  // Prefer newer annotations and then shorter labels when screen boxes
+  // overlap, matching the uncluttered 2.0 overlay.
+  labels.sort((a, b) =>
+    ((b.userData.chartT || 0) - (a.userData.chartT || 0)) ||
+    ((a.userData.chartLabelTextLength || 0) - (b.userData.chartLabelTextLength || 0)) ||
+    (a.id - b.id));
+  const acceptedBoxes = [];
+  for (const obj of labels) {
+    const box = chartLabelScreenBox(obj, rect);
+    if (!box) continue;
+    const blocked = acceptedBoxes.some(other =>
+      box.minX < other.maxX && box.maxX > other.minX &&
+      box.minY < other.maxY && box.maxY > other.minY);
+    if (blocked) {
+      obj.userData.chartDeclutterHidden = true;
+      obj.visible = false;
+      continue;
+    }
+    acceptedBoxes.push(box);
   }
 }
 
@@ -7787,6 +8080,10 @@ function updateTracks3D() {
   // boat is in "live" mode. anyChartLive() short-circuits on the common
   // case where every boat is Off or Full, costing nothing.
   if (anyChartLive()) applyChartVisibility();
+  // Keep labels, recorded stroke widths and X/ring/square symbols aligned
+  // with the current zoom, then perform the same screen-space decluttering
+  // as the 2.0 player.
+  updateChartDrawingSizing();
   for (const id in tracks) {
     const tr = tracks[id];
     const style = TRACK_STYLE_3D[tr.kind];
