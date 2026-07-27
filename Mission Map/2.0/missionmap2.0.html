@@ -10922,11 +10922,23 @@ function updateTracks3D() {
         }
       }
     }
-    // LineDashedMaterial needs vertex-space distances; cheap enough for
-    // our buffer sizes (a few thousand verts max) — but only recompute
-    // when the dash pattern actually changed.
-    if (dashChanged) {
+    // LineDashedMaterial needs distances matching the CURRENT position
+    // buffer. Convoy/escort trails grow as playback crosses each sample;
+    // previously we recomputed only when their speed bucket changed. A
+    // ship holding the same speed therefore kept the short distance buffer
+    // created near t=0, making most of its later trail appear as missing
+    // fragments until the JSON was loaded a second time at a different
+    // render state. Refresh when the visible sample range changes, while
+    // avoiding an O(n) compute on every interpolated animation frame.
+    const trailRangeChanged =
+      line.userData.trailFirstIdx !== firstIdx ||
+      line.userData.trailCutoff !== cutoff ||
+      line.userData.trailWritten !== written;
+    if (dashChanged || trailRangeChanged) {
       line.computeLineDistances();
+      line.userData.trailFirstIdx = firstIdx;
+      line.userData.trailCutoff = cutoff;
+      line.userData.trailWritten = written;
     }
   }
 }
