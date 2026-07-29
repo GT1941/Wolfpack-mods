@@ -1121,6 +1121,7 @@
             <label class="toggle" title="Show alerted escorts' forward searchlight and night search beams. Merchant search beams are unaffected."><input type="checkbox" id="escortSearchLightsOn" checked> Escort searchlights</label>
             <label class="toggle" title="Show airborne illumination rounds (starshells) — convoy-AI flares and player deck-gun illumination. Turn off to declutter the sky during a flare-heavy engagement or celebration."><input type="checkbox" id="flaresOn" checked> Flares (starshells)</label>
             <label class="toggle" title="Show deck-gun firing markers, shot paths, water splashes, solid contacts, damage labels, and hover trajectories."><input type="checkbox" id="deckGunShotsOn" checked> Deck-gun shots</label>
+            <label class="toggle" title="Show the large camera-facing U-boat emblems above the hulls. The correctly scaled emblems on the conning towers remain visible."><input type="checkbox" id="floatingEmblemsOn"> Floating emblems</label>
             <label class="toggle" title="Keep dropped depth charges and their yellow sinking lines visible after detonation. Turn off for the short explosion-and-fade presentation."><input type="checkbox" id="keepDepthChargesOn" checked> Keep depth charges</label>
             <label class="toggle" title="Show the 💡 fleeing indicator above convoy merchants when the convoy AI is in its flee state. Turn off to declutter."><input type="checkbox" id="fleeIconsOn" checked> Fleeing markers (💡)</label>
             <label class="toggle" title="Show health bars above DAMAGED convoy ships and escorts. Bars only appear once a hull has taken damage (full-health ships stay clean); turn off to hide them entirely."><input type="checkbox" id="hpBarsOn" checked> Health bars</label>
@@ -6005,7 +6006,8 @@ const hpBars       = new Map();   // id -> {sprite, canvas, c2d, texture, lastHp
 const dmgLabels    = new Map();   // event idx -> "-N dmg" sprite per torpedo_hit
 const missedLabels = new Map();   // torpedo id -> "Missed" sprite at last position
 const sunkBoidLabels = new Map(); // boid id -> name sprite parked at last sample
-const insigniaSprites = new Map(); // uboat id -> floating insignia sprite
+const insigniaSprites = new Map(); // uboat id -> optional floating insignia sprite
+const insigniaDecals  = new Map(); // uboat id -> conning-tower emblem mesh
 // Cache loaded + chroma-keyed textures so we only process each PNG once.
 const insigniaTexCache  = new Map(); // path -> THREE.CanvasTexture
 const insigniaDataUrl   = new Map(); // path -> chroma-keyed PNG data URL
@@ -6109,9 +6111,78 @@ window.addEventListener("DOMContentLoaded", () => {
   for (const n of ["96", "552", "564", "307"]) getInsigniaTexture("U-" + n);
 });
 
-// Floating insignia sprite above a u-boat. Sits between the surface and
-// the existing text label so the boat's identity reads at a glance even
-// when zoomed far out (the text becomes the secondary cue).
+// Physical insignia on the conning tower, plus the optional legacy
+// camera-facing version used as a map-scale identity cue.
+function updateTowerInsignia3D(id, snap, mesh) {
+  if (!snap || !mesh) return;
+  const tex = getInsigniaTexture(snap.n);
+  if (!tex) return;
+  let decal = insigniaDecals.get(id);
+  if (!decal) {
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      color: 0xe4e9ec,
+      transparent: true,
+      alphaTest: 0.04,
+      depthTest: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    decal = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 8, 1), mat);
+    // The upper tower's forward cylindrical cap is radius 1.24 m around
+    // z=+0.46. Geometry below is bent onto that cap with a 2 cm stand-off.
+    decal.position.set(0, 5.05, 0.46);
+    decal.renderOrder = 52;
+    decal.frustumCulled = false;
+    mesh.add(decal);
+    insigniaDecals.set(id, decal);
+  }
+
+  // Preserve each badge's authored aspect ratio. About one metre high
+  // matches the tower face; cap wide artwork so it does not wrap around
+  // the 2.48 m upper bridge's rounded sides.
+  const image = tex.image;
+  const aspect = image && image.width > 1 && image.height > 1
+    ? image.width / image.height : 1;
+  let height = 1.05;
+  let width = height * aspect;
+  if (width > 1.30) {
+    width = 1.30;
+    height = width / aspect;
+  }
+  const sizeKey = width.toFixed(4) + ":" + height.toFixed(4);
+  if (decal.userData.insigniaSizeKey !== sizeKey) {
+    const pos = decal.geometry.attributes.position;
+    const uv = decal.geometry.attributes.uv;
+    const towerRadius = 1.24;
+    for (let i = 0; i < pos.count; i++) {
+      const x = (uv.getX(i) - 0.5) * width;
+      const y = (uv.getY(i) - 0.5) * height;
+      const z = Math.sqrt(Math.max(0, towerRadius * towerRadius - x * x)) + 0.02;
+      pos.setXYZ(i, x, y, z);
+    }
+    pos.needsUpdate = true;
+    decal.geometry.computeVertexNormals();
+    decal.geometry.computeBoundingSphere();
+    decal.userData.insigniaSizeKey = sizeKey;
+  }
+  decal.visible = true;
+}
+
+function disposeTowerInsignia3D(id) {
+  const decal = insigniaDecals.get(id);
+  if (!decal) return;
+  if (decal.parent) decal.parent.remove(decal);
+  decal.geometry.dispose();
+  decal.material.dispose();
+  insigniaDecals.delete(id);
+}
+
+// Optional legacy floating insignia above a U-boat. It remains available
+// as a display setting but is off by default now that the model has a decal.
 function updateInsigniaSprite3D(id, snap, meshPosition) {
   if (!snap) return;
   const tex = getInsigniaTexture(snap.n);
@@ -6127,6 +6198,10 @@ function updateInsigniaSprite3D(id, snap, meshPosition) {
     spr.frustumCulled = false;
     scene3d.add(spr);
     insigniaSprites.set(id, spr);
+  }
+  if (!trailToggles.floatingEmblems) {
+    spr.visible = false;
+    return;
   }
   // Hover above the hull, below the depth/speed text label.
   spr.position.set(meshPosition.x, Y_TOP + 130, meshPosition.z);
@@ -9757,6 +9832,7 @@ function update3D() {
     // Per-uboat text label (name + speed + depth + battery + under-keel)
     if (tr.kind === "u") {
       updateUboatLabel3D(id, snap, mesh.position);
+      updateTowerInsignia3D(id, snap, mesh);
       updateInsigniaSprite3D(id, snap, mesh.position);
       updateUboatGlow3D(id, snap, mesh);
       updateUboatDepthTint3D(snap, mesh);
@@ -9954,6 +10030,7 @@ function update3D() {
         ins.material.dispose();
         insigniaSprites.delete(id);
       }
+      disposeTowerInsignia3D(id);
       const ug = uboatGlows.get(id);
       if (ug) {
         scene3d.remove(ug.halo);
@@ -11034,6 +11111,7 @@ loadData = function(json) {
     for (const [id, lbl]  of missedLabels)  { scene3d.remove(lbl); lbl.material.map.dispose(); lbl.material.dispose(); }
     for (const [id, lbl]  of sunkBoidLabels){ scene3d.remove(lbl); lbl.material.map.dispose(); lbl.material.dispose(); }
     for (const [id, spr]  of insigniaSprites) { scene3d.remove(spr); spr.material.dispose(); }
+    for (const id of Array.from(insigniaDecals.keys())) disposeTowerInsignia3D(id);
     for (const [id, e]    of uboatGlows)    { scene3d.remove(e.halo); e.halo.material.dispose(); }
     for (const [id, w]    of wakeMeshes)    { scene3d.remove(w); w.material.dispose(); }
     for (const [id, sl]   of searchLights)  {
@@ -11080,6 +11158,7 @@ loadData = function(json) {
   missedLabels.clear();
   sunkBoidLabels.clear();
   insigniaSprites.clear();
+  insigniaDecals.clear();
   uboatGlows.clear();
   for (const [k, p] of pingFloats) {
     scene3d.remove(p.sprite); p.sprite.material.map.dispose(); p.sprite.material.dispose();
@@ -11477,6 +11556,7 @@ const trailToggles = {
   escortSearchLights: true,
   flares: true,
   deckGunShots: true,
+  floatingEmblems: false,
   depthCharges: true,
   fleeIcons: true,
   health: true,
@@ -11525,6 +11605,7 @@ _wireTrailToggle("escortHeadingRaysOn", "headingRays");
 _wireTrailToggle("escortSearchLightsOn", "escortSearchLights");
 _wireTrailToggle("flaresOn", "flares");
 _wireTrailToggle("deckGunShotsOn", "deckGunShots");
+_wireTrailToggle("floatingEmblemsOn", "floatingEmblems");
 _wireTrailToggle("keepDepthChargesOn", "depthCharges");
 _wireTrailToggle("fleeIconsOn", "fleeIcons");
 _wireTrailToggle("hpBarsOn", "health");
