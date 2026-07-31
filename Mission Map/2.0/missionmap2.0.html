@@ -116,6 +116,19 @@
     margin: 0; font-size: 12px; letter-spacing: 2px;
     text-transform: uppercase; color: var(--dim); font-weight: normal;
   }
+  header a.donate {
+    color: var(--amber);
+    border: 1px solid rgba(255,178,74,0.55);
+    border-radius: 3px;
+    padding: 4px 8px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  header a.donate:hover {
+    color: var(--fg);
+    border-color: var(--amber);
+    background: rgba(255,178,74,0.08);
+  }
   header label.file {
     border: 1px solid var(--line); padding: 4px 10px; border-radius: 3px;
     cursor: pointer; color: var(--fg);
@@ -952,6 +965,7 @@
 <div id="app">
   <header>
     <h1>Mission Map <span style="font-size:10px;color:var(--dim);font-weight:normal;letter-spacing:0">v2 · <a href="https://github.com/GT1941/Wolfpack-mods" target="_blank" rel="noopener" style="color:var(--dim)" title="Downloads, docs and updates on GitHub">GT1941/Wolfpack-mods</a></span></h1>
+    <a class="donate" href="https://ko-fi.com/L8E121S5BX" target="_blank" rel="noopener" title="Support MissionMap on Ko-fi">♥ Donate</a>
     <label class="file"><input type="file" id="file" accept=".json">Load .json</label>
     <button id="recInfoBtn" type="button" title="Recording information">ⓘ</button>
     <span class="meta" title="Mean speed &amp; heading of merchants still afloat at full HP. Reads 'Alerted' when any escort has detected something.">Convoy avg: <span id="convoyAvg">--</span> · <span id="convoyHead">--</span></span>

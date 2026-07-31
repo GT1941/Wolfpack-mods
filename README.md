@@ -13,11 +13,11 @@ BepInEx mods for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/)
 
 Records every entity's position over the course of a mission and ships with a full 3D replay viewer.
 
-**MissionMap 2.0 is coming soon.** The public release currently contains the archived pre-2.0 recorder and viewer under `Mission Map/pre-2.0/`; the 2.0 recorder and viewer are still being finalized.
+**MissionMap 2.0 is released.** The previous 1.9.x recorder and viewer remain archived under `Mission Map/pre-2.0/`.
 
-MissionMap 2.0 preview:
+MissionMap 2.0:
 
-![MissionMap 2.0 preview](<Mission Map/2.0/missionmap-2.0-preview.png>)
+![MissionMap 2.0](<Mission Map/2.0/missionmap-2.0-preview.png>)
 
 **Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
 - U-boat positions, movement, depth, condition, and supplies.
@@ -25,7 +25,7 @@ MissionMap 2.0 preview:
 - Torpedoes, depth charges, gunfire, hits, sinkings, and other major events.
 - Seabed depth, chart drawings, mission settings, crew information, and player join/leave activity.
 
-A 3D replay viewer is included at [`Mission Map/pre-2.0/missionmap.html`](<Mission Map/pre-2.0/missionmap.html>) — drop a mission JSON onto it to review the patrol. It shows the boats, convoy, torpedoes, routes, depths, chart drawings, hits, and other important events on an interactive map. You can follow individual U-boats, measure distances and times, inspect attacks, and see when escorts are searching or engaging.
+MissionMap 2.0 ships with a full 3D replay viewer — drop a mission JSON onto it to review the patrol. It shows the boats, convoy, torpedoes, routes, depths, chart drawings, hits, and other important events on an interactive map. You can follow individual U-boats, measure distances and times, inspect attacks, and see when escorts are searching or engaging. The archived 1.9.x viewer remains available at [`Mission Map/pre-2.0/missionmap.html`](<Mission Map/pre-2.0/missionmap.html>).
 
 **Discord auto-post:** MissionMap can automatically post the finished mission JSON, plus optional summary, roster, and settings files, to a Discord channel via webhook. It's off by default and configured through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it.
 
@@ -127,7 +127,7 @@ want to try it, but expect drift against current game versions.
 │   ├── LogbookExport.dll
 │   └── NetworkFix.dll
 └── Mission Map/
-    ├── 2.0/                 # coming soon
+    ├── 2.0/                 # MissionMap 2.0
     │   └── missionmap-2.0-preview.png
     └── pre-2.0/
         ├── MissionMap.dll
