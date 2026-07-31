@@ -4,6 +4,11 @@ BepInEx mods for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/)
 
 ---
 
+## Donation link
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L8E121S5BX)
+
+---
+
 ## MissionMap
 
 Records every entity's position over the course of a mission and ships with a full 3D replay viewer.
