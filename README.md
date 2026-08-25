@@ -1,4 +1,5 @@
 -- logbook export conflicts with other mods in the newest wolfpack builds --
+-- the network fix is currently bugged on clients, seems fine on host, will fix it shortly --
 
 **Wolfpack BepInEx Mods**
 
