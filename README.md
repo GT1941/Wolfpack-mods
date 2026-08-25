@@ -1,3 +1,5 @@
+-- logbook export conflicts with other mods in the newest wolfpack builds --
+
 **Wolfpack BepInEx Mods**
 
 BepInEx mods for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
