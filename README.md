@@ -107,8 +107,9 @@ want to try it, but expect drift against current game versions.
 ## Installation
 
 1. Install BepInEx 6 IL2CPP into the Wolfpack game folder. Use a recent **bleeding-edge** build (the `win-x64` IL2CPP artifact) from the official build server: <https://builds.bepinex.dev/projects/bepinex_be>
-2. Drop the desired `.dll` files into `BepInEx/plugins/`
-3. Launch the game
+2. Run the game once to create the bepinex files.
+3. Drop the desired `.dll` files into `BepInEx/plugins/`
+4. Launch the game
 
 ## Repository Structure
 
