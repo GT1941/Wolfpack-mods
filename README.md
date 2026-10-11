@@ -1,162 +1,257 @@
--- the previous logbook export conflicts with other mods in the newest wolfpack builds --
+# Wolfpack Mods
 
-**Wolfpack BepInEx Mods**
+Gameplay mods and useful extras for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/).
+Choose the mods you want; you do not need to install the whole collection.
+Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
 
-BepInEx mods for [Wolfpack](https://store.steampowered.com/app/490920/Wolfpack/). Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
+## Which players need the mod?
 
----
+- **Host only:** install on the player hosting the mission. Other players can join without the mod.
+- **Each player:** install on every player who wants that feature, including the host. These mods change that player's own interface or listening experience.
+- **Host or client:** follow the individual mod's notes below; some features are shared when the host has the mod.
 
-## Donation link
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L8E121S5BX)
+Downloads are arranged in [`Host mods/`](<Host mods/>), [`Client mods/`](<Client mods/>)
+and [`Host and or Client mods/`](<Host and or Client mods/>).
 
----
+## Mod overview
 
-## MissionMap
+| Mod | What it adds | Install on |
+| --- | --- | --- |
+| [MissionMap](#missionmap) | A mission recording and interactive 3D replay | Host only |
+| [Going Under — Convoy Ship Sinking](#going-under) | Damaged ships list, settle and sink in varied ways | Host only |
+| [Shaken, Not Sunk](#shaken-not-sunk) | Machinery failures and onboard emergencies after depth-charge attacks | Host only |
+| [AlliedUboat](#allieduboat) | A player-controlled allied U-boat alongside the convoy | Host only |
+| [QuietLogbook](#quietlogbook) | Hide the logbook during play, then reveal it with F6 | Host only |
+| [LargerConvoyScaled](#largerconvoyscaled) | Larger convoys, adjustable escort numbers and sinking goals | Host only |
+| [TorpedoLoadout](#torpedoloadout) | 14 steam and 14 electric torpedoes per boat | Host only |
+| [ClientBugFixes](#clientbugfixes) | Fixes for local sounds, TDC input and door appearance | Each player |
+| [LogbookSeconds](#logbookseconds) | Seconds and extra torpedo details in the logbook | Host recommended for shared entries |
+| [NetworkFix](#networkfix) | Multiplayer smoothing | Host; client installation optional |
+| [SettingsKeeper](#settingskeeper) | Helps preserve settings between launches and branch changes | Each player |
+| [TimeHUD](#timehud) | An on-screen clock and optional chat timestamps | Each player; host for shared timestamps |
+| [Game Time API](#game-time-api) | Supplies mission time to compatible overlays and tools | Player using the tool |
+| [RadioAPI](#radioapi) | Connects compatible radio tools to the game's radio | Player using the tool |
 
-Records every entity's position over the course of a mission and ships with a full 3D replay viewer.
+## Host gameplay mods
 
-**MissionMap 2.0 is released.** The previous 1.9.x recorder and viewer remain archived under `Mission Map/pre-2.0/`.
+### MissionMap
 
-MissionMap 2.0:
+Records a mission so the crew can review it afterward in a browser. The 3D viewer
+shows U-boats, merchants, escorts, torpedoes, depth charges, routes, hits and
+sinkings. Follow a boat, measure an attack or compare what happened across the convoy.
 
-![MissionMap 2.0](<Mission Map/2.0/missionmap-2.0-preview.png>)
+![MissionMap replay viewer](<Host mods/Mission Map/2.0/missionmap-2.0-preview.png>)
 
-**Recorder** writes `BepInEx/MissionMap_<timestamp>.json` containing:
-- U-boat positions, movement, depth, condition, and supplies.
-- Convoy and escort positions, names, damage, alerts, and activity.
-- Torpedoes, depth charges, gunfire, hits, sinkings, and other major events.
-- Seabed depth, chart drawings, mission settings, crew information, and player join/leave activity.
+**How to use:**
 
-MissionMap 2.0 ships with a full 3D replay viewer — drop a mission JSON onto it to review the patrol. It shows the boats, convoy, torpedoes, routes, depths, chart drawings, hits, and other important events on an interactive map. You can follow individual U-boats, measure distances and times, inspect attacks, and see when escorts are searching or engaging. The archived 1.9.x viewer remains available at [`Mission Map/pre-2.0/missionmap.html`](<Mission Map/pre-2.0/missionmap.html>).
+1. Install [MissionMap.dll](<Host mods/Mission Map/2.0/MissionMap.dll>) on the host.
+2. Finish the mission through the normal end/debrief screen so the recording is saved.
+3. Find `MissionMap_<timestamp>.json` in the game's `BepInEx` folder.
+4. Open the bundled [2.0.2 replay viewer](<Host mods/Mission Map/2.0/missionmap2.0.2.html>) in a browser and drop the recording onto it.
 
-**Discord auto-post:** MissionMap can automatically post the finished mission JSON, plus optional summary, roster, and settings files, to a Discord channel via webhook. It's off by default and configured through the mod's BepInEx config file (`BepInEx/config/MissionMap.cfg`) — set a webhook URL and the post options there to enable it.
+The recorder can also post completed recordings to Discord. This is **off by
+default**; enable it and enter your channel's webhook in `BepInEx/config/MissionMap.cfg`.
+The older recorder and viewer remain in [pre-2.0](<Host mods/Mission Map/pre-2.0/>).
+Use one recorder version at a time.
 
-**Notes:**
-- **Host-only.** Only the host writes the recording. Dropping the DLL on every peer is harmless — non-host installs stay inert.
-- Recording finalises when the mission ends cleanly (debrief).
-- Ship hulls in the viewer are drawn to their real draught and height so torpedo running depths visually line up with the keel they would strike.
-- A "lights on" indicator appears over every merchant while the convoy is fleeing, matching what the AI is actually doing in the moment.
+<a id="going-under"></a>
 
-**Install on:** host only (clients no-op silently).
+### Going Under — Convoy Ship Sinking
 
----
+Makes damaged convoy merchants and escorts list and settle before sinking.
+Ships can go down bow-first or stern-first, roll onto their side, or occasionally
+turn upside down. The locations and combined damage of hits influence the result.
+**U-boats are not affected.**
 
-## LogbookSeconds
+The bow and stern only settle slightly while a ship is still alive; larger
+movements begin after the game marks it sunk. Wrecks remain until their centre
+reaches **100 metres underwater or 10 minutes have passed**, whichever comes first.
+Time acceleration advances that removal timer. Damage, fires and sinking credit
+still follow the game's normal rules.
 
-Enhancements to the in‑game C‑menu logbook:
+**Use:** automatic; no hotkey. Install on the host only.
 
-1. **Seconds upgrade** — rewrites timestamps from `HH:MM` to `HH:MM:SS` for finer time resolution.
-2. **Torpedo launch metadata** — appends the torpedo's speed and detonator type to the launch entry the game just wrote. Example:
-   ```
-   14:07:12 LAUNCHED TORPEDO TUBE 1. (44kn magnetic)
-   ```
-3. **Torpedo hit tube + impact angle** — appends the firing tube and impact angle to each hit line so the captain can see which tube scored and how square the hit was:
-   ```
-   14:07:40 TORPEDO HIT HEAVY TANKER, TYPE 32. (tube 1, 78° impact)
-   ```
-4. **Friendly-fire reporting** — when a torpedo strikes another U-boat the game logs only a vague "premature" line; this rewrites it into a proper friendly-fire hit/sink report (firer, victim, tube, impact angle), and notes the loss on both boats if the hit is fatal.
+**Download:** [GoingUnder.dll](<Host mods/GoingUnder.dll>). This replaces
+`ProgressiveSinking.dll`; remove the old DLL when upgrading. Existing settings
+are kept in `gt1941.wolfpack.progressivesinking.cfg`.
 
-Each player sees their own logbook locally — the mod doesn't change anything on the wire and is safe to run alongside other players with or without the same mod installed.
+<a id="shaken-not-sunk"></a>
 
-**Install on:** any client.
+### Shaken, Not Sunk
 
----
+Turns depth-charge attacks into onboard emergencies. Depending on the damage,
+the crew may have to deal with ventilation flooding, flooded engine cylinders,
+electrical or machinery faults, stuck controls and temporary instrument failures.
+The boat can also suffer a temporary sideways roll.
 
-## TorpedoLoadout
+Severe attacks causing **20% or more damage** force at least one engine-room
+ventilation valve open when ventilation failures are enabled. The crew must close
+it to stop the water entering. The mod does not protect the boat from sinking or
+repair ordinary hull damage.
 
-Sets the per-boat torpedo loadout to **14 steam (T1) and 14 electric (T2)**, applied to all 4 crews. The override catches every reload path — mission start, the lobby's reset button, default-loadout reload — so the count stays at 14/14 regardless of how the game tries to reset it.
+**Use:** failures occur automatically after attacks. Failure types and chances
+are configurable. Clients can operate the affected machinery without installing
+the mod.
 
-**Install on:** host only.
+**Download:** [ShakenNotSunk.dll](<Host mods/ShakenNotSunk.dll>).
 
----
+### AlliedUboat
 
-## Other Mods
+Lets a player crew act as an allied submarine near the convoy. Choose the boat
+by name; convoy ships and escorts treat it as friendly while its allied status
+is active. It can fight the Axis U-boats, and attacking convoy ships can revoke
+its protection.
 
-Additional utilities in the [`Other Mods/`](Other%20Mods/) folder:
+**Use:** enable the mod and set the allied boat's name in
+`BepInEx/config/AlliedUboat.cfg` before starting the mission. It is disabled by
+default.
 
-- **Game Time API** — exposes in-game time and mission state at `http://127.0.0.1:1941/time` for webpages and overlays. Install on any client.
-- **TimeHUD** — adds an in-game clock and optional synchronized chat timestamps. Install on any client; host installation makes chat timestamps visible to everyone.
-- **RadioAPI** — exposes radio send/receive endpoints at `http://127.0.0.1:1942` for external tools and overlays. Install on any client.
-- **EscortDCStock** — restores stock-style escort depth-charge inventory and reload behavior. Host only.
-- **SettingsKeeper** — persists selected Wolfpack settings between launches. Install on any client.
+**Download:** [AlliedUboat.dll](<Host mods/AlliedUboat.dll>). Remove the older
+`GhostUboat.dll` if upgrading. Do not combine it with Playable Corvette.
 
----
+### QuietLogbook
 
-## Archived mods
+Keeps the logbook empty during the mission so the crew must judge hits and
+sinkings from what they observe. The host can press **F6** to reveal the
+accumulated entries before leaving the mission. MissionMap continues recording
+the events normally.
 
-Past mods kept under `archive/` for historical reference. Not actively
-maintained — pull a DLL out and drop it into `BepInEx/plugins/` if you
-want to try it, but expect drift against current game versions.
+**Note:** clients still see the tonnage counter. F6 can reveal the book at any
+time, so save it for the end if that is your group's rule.
 
-- **`archive/LogbookExport.dll`** — wrote a patrol-log summary file to
-  `BepInEx/` after each mission (torpedo launches / hits, sinkings,
-  first detection, summary totals). Superseded in practice by the
-  much richer MissionMap JSON + viewer.
-- **`archive/NetworkFix.dll`** — bumped the multiplayer network update
-  rate to reduce rubber-banding and desync. Recent game patches appear
-  to have addressed most of what it was working around.
-- **`archive/LargerConvoy1_5x.dll`** / **`archive/LargerConvoy2x.dll`** —
-  increase convoy spawn counts by ×1.5 or ×2. Load only one variant at a
-  time; the convoy AI may behave unpredictably at inflated sizes.
-- **`LargerConvoyScaled.dll`** — uses configurable per-lobby-size spawn,
-  tonnage-goal, and escort targets. Host only; do not load alongside another
-  `LargerConvoy*.dll`.
+**Download:** [QuietLogbook.dll](<Host mods/QuietLogbook.dll>).
 
----
+### LargerConvoyScaled
+
+Adds larger convoys and sets sinking goals and escort numbers for each lobby
+convoy-size setting. The host can adjust convoy tonnage, the mission goal,
+sloops, corvettes and destroyers in `BepInEx/config/LargerConvoyScaled.cfg`.
+
+**Use:** choose the convoy size in the lobby, then start a mission. Install only
+one `LargerConvoy` variant at a time. Very large formations can produce unusual
+ship or escort behavior.
+
+**Download:** [LargerConvoyScaled.dll](<Host mods/LargerConvoyScaled.dll>).
+
+### TorpedoLoadout
+
+Gives each boat **14 steam (T1) and 14 electric (T2) torpedoes**. The loadout is
+also reapplied when the game resets or reloads the boat's torpedo selection.
+
+**Use:** automatic; no hotkey.
+
+**Download:** [TorpedoLoadout.dll](<Host mods/TorpedoLoadout.dll>).
+
+## Local fixes and utilities
+
+### ClientBugFixes
+
+Fixes several issues on the player's own game:
+
+- TDC dials changing just from hovering after leaving the reload screen or returning to the station.
+- Doors looking open while still blocking passage.
+- Creep-mode switch clicks and ladder sounds being heard too far away.
+- Some missing sounds and the dive alarm being inaudible in the engine room.
+
+An optional setting also reduces the straight bright strip beneath burning ships.
+It is **off by default** and reduces fire glow on the water when enabled.
+
+**Use:** automatic. Individual fixes can be enabled or disabled in
+`BepInEx/config/ClientBugFixes.cfg`. Each player who wants the fixes must install
+the mod, including the host.
+Remove older `AudioPatcher.dll` and `TorpedoMenuFix.dll` copies that duplicate these fixes.
+
+**Download:** [ClientBugFixes.dll](<Host and or Client mods/ClientBugFixes.dll>).
+
+### LogbookSeconds
+
+Adds seconds to logbook timestamps and extra details to torpedo entries:
+launch speed and detonator, firing tube, impact angle and clearer friendly-fire reports.
+
+For example: `14:07:12 LAUNCHED TORPEDO TUBE 1. (44kn magnetic)`.
+
+**Use:** automatic. Install on the host to share the enhanced logbook entries
+with the crew. Clients do not need the mod for this.
+
+**Download:** [LogbookSeconds.dll](<Host and or Client mods/LogbookSeconds.dll>).
+
+### NetworkFix
+
+Helps reduce delayed multiplayer updates and rubber-banding. Install on the
+host; client installation is optional.
+
+**Download:** [NetworkFix.dll](<Host and or Client mods/NetworkFix.dll>).
+
+### SettingsKeeper
+
+Helps retain selected settings between launches and Steam branch changes,
+including the recognition manual's background preference.
+
+**Use:** automatic. Install on each player who wants to keep their own settings.
+
+**Download:** [SettingsKeeper.dll](<Client mods/SettingsKeeper.dll>).
+
+### TimeHUD
+
+Adds a clock showing the current in-game time and optional timestamps to chat.
+The clock is local to each player; host installation makes shared chat timestamps
+available to the other players.
+
+**Use:** automatic. Display options are configurable in `BepInEx/config/TimeHUD.cfg`.
+
+**Download:** [TimeHUD.dll](<Client mods/TimeHUD.dll>).
+
+### Game Time API
+
+Supplies the current mission time, date and boat information to compatible
+webpages, stream overlays and other tools. It does not add an in-game display by itself.
+
+**Use:** install on the same computer as the tool using it.
+
+**Download:** [GameTime_API.dll](<Client mods/GameTime_API.dll>).
+
+### RadioAPI
+
+Allows compatible external radio tools to read received radio traffic and send
+Morse messages through the game's radio. Actual transmissions are heard by the
+other players just like normal radio use.
+
+**Use:** install on the same computer as the radio tool. It does not add an
+in-game radio interface by itself.
+
+**Download:** [RadioAPI.dll](<Client mods/RadioAPI.dll>).
 
 ## Installation
 
-1. Install BepInEx 6 IL2CPP into the Wolfpack game folder. Use a recent **bleeding-edge** build (the `win-x64` IL2CPP artifact) from the official build server: <https://builds.bepinex.dev/projects/bepinex_be>
-2. Run the game once to create the bepinex files.
-3. Drop the desired `.dll` files into `BepInEx/plugins/`
-4. Launch the game
+1. Close Wolfpack.
+2. Install a compatible **BepInEx 6 IL2CPP for Windows x64** build in the Wolfpack game folder. Builds are available from the [official BepInEx build server](https://builds.bepinex.dev/projects/bepinex_be).
+3. Launch the game once, then close it to create the BepInEx folders.
+4. Copy your chosen mod DLLs into `Wolfpack/BepInEx/plugins/`. The repository's folder names describe who needs the mods; the DLLs all go into this same game folder.
+5. Start the game. Most mods create their settings in `BepInEx/config/` on first launch. Close the game before editing those files.
 
-## Repository Structure
+To update a mod, replace its old DLL rather than keeping multiple versions.
+If a mod has been renamed, remove the previous DLL too. To remove a mod, close
+the game and take its DLL out of `BepInEx/plugins/`.
 
-```
-.
-├── LargerConvoyScaled.dll
-├── LogbookSeconds.dll
-├── TorpedoLoadout.dll
-├── Other Mods/
-│   ├── EscortDCStock.dll
-│   ├── GameTime_API.dll
-│   ├── RadioAPI.dll
-│   ├── SettingsKeeper.dll
-│   └── TimeHUD.dll
-├── archive/
-│   ├── LargerConvoy1_5x.dll
-│   ├── LargerConvoy2x.dll
-│   ├── LogbookExport.dll
-│   └── NetworkFix.dll
-└── Mission Map/
-    ├── 2.0/                 # MissionMap 2.0
-    │   └── missionmap-2.0-preview.png
-    └── pre-2.0/
-        ├── MissionMap.dll
-        ├── missionmap.html
-        └── insignia/
-```
+## Archived releases
 
-Source is not currently public.
-
-## Requirements
-
-- Wolfpack pre-beta — Steam `testing` or `beta-beta` branch (Unity 2020.3, IL2CPP)
-- BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2 (the version these mods were built and tested against). Newer bleeding-edge builds from <https://builds.bepinex.dev/projects/bepinex_be> generally work too.
+The [`archive/`](archive/) folder contains older `LargerConvoy1_5x.dll`,
+`LargerConvoy2x.dll` and `LogbookExport.dll` releases. They are kept for reference
+and may not work with current game versions. MissionMap replaces the older
+LogbookExport recording tool. The previous MissionMap recorder/viewer is kept
+separately under [pre-2.0](<Host mods/Mission Map/pre-2.0/>).
 
 ## Licence
 
-The plugin DLLs, web viewer, and documentation in this repository are
-**All Rights Reserved** — see [`LICENSE.txt`](LICENSE.txt) for the full
-text. They are not open source; redistribution or modification requires
-the copyright holder's written permission.
+The plugin DLLs, replay viewer and documentation are **All Rights Reserved**.
+See [LICENSE.txt](LICENSE.txt) for the full terms. Redistribution or modification
+requires the copyright holder's written permission.
 
-The linked dependencies retain their original licences, also reproduced
-in `LICENSE.txt`:
+The linked dependencies retain their own licences, reproduced in `LICENSE.txt`:
 
-- **BepInEx** — GNU Lesser General Public License, version 2.1
-- **HarmonyX** (the Harmony2 fork bundled with BepInEx 6) — MIT
+- **BepInEx:** GNU Lesser General Public License, version 2.1.
+- **HarmonyX:** MIT.
 
-## Donation link
+## Support development
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L8E121S5BX)
