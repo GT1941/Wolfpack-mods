@@ -10,8 +10,9 @@ Requires [BepInEx 6 IL2CPP](https://github.com/BepInEx/BepInEx).
 - **Each player:** install on every player who wants that feature, including the host. These mods change that player's own interface or listening experience.
 - **Host or client:** follow the individual mod's notes below; some features are shared when the host has the mod.
 
-Downloads are arranged in [`Host mods/`](<Host mods/>), [`Client mods/`](<Client mods/>)
-and [`Host and or Client mods/`](<Host and or Client mods/>).
+Downloads are arranged in [`Host mods/`](<Host mods/>) and
+[`Host and or Client mods/`](<Host and or Client mods/>).
+Check the table below to see who needs each mod.
 
 ## Mod overview
 
@@ -25,6 +26,7 @@ and [`Host and or Client mods/`](<Host and or Client mods/>).
 | [LargerConvoyScaled](#largerconvoyscaled) | Larger convoys, adjustable escort numbers and sinking goals | Host only |
 | [TorpedoLoadout](#torpedoloadout) | 14 steam and 14 electric torpedoes per boat | Host only |
 | [ClientBugFixes](#clientbugfixes) | Fixes for local sounds, TDC input and door appearance | Each player |
+| [Loud & Clear — Crew Voice Volume](#loud-and-clear) | Adjust each player's voice volume from 0–200% during a mission | Each player who wants the controls |
 | [LogbookSeconds](#logbookseconds) | Seconds and extra torpedo details in the logbook | Host recommended for shared entries |
 | [NetworkFix](#networkfix) | Multiplayer smoothing | Host; client installation optional |
 | [SettingsKeeper](#settingskeeper) | Helps preserve settings between launches and branch changes | Each player |
@@ -144,6 +146,29 @@ also reapplied when the game resets or reloads the boat's torpedo selection.
 
 ## Local fixes and utilities
 
+<a id="loud-and-clear"></a>
+
+### Loud & Clear — Crew Voice Volume
+
+Adjust individual crew members' voice volume without returning to the lobby.
+Turn down loud voices, boost quieter ones or mute a player. Your choices affect
+only what you hear, including normal speech, voice tubes and telephones.
+
+**How to use:**
+
+1. Open the **Tab** crew menu during a mission.
+2. Click the **Voice** percentage button beside a player's row to open the slider.
+3. Set the volume: **0% mutes, 100% is normal and 200% is the maximum boost**.
+4. Click **Close** to hide the slider. Opening another player's control closes the previous one.
+
+Volumes are saved for each player and remain in effect after closing the menu.
+Your own row has no volume control. Install on each player who wants these
+controls; installing only on the host does not give them to everyone else.
+
+**Download:** [LoudAndClear.dll](<Host and or Client mods/LoudAndClear.dll>).
+This replaces `TabVoiceVolume.dll`; remove the old DLL when upgrading.
+Existing settings are kept in `BepInEx/config/TabVoiceVolume.cfg`.
+
 ### ClientBugFixes
 
 Fixes several issues on the player's own game:
@@ -189,7 +214,7 @@ including the recognition manual's background preference.
 
 **Use:** automatic. Install on each player who wants to keep their own settings.
 
-**Download:** [SettingsKeeper.dll](<Client mods/SettingsKeeper.dll>).
+**Download:** [SettingsKeeper.dll](<Host and or Client mods/SettingsKeeper.dll>).
 
 ### TimeHUD
 
@@ -199,7 +224,7 @@ available to the other players.
 
 **Use:** automatic. Display options are configurable in `BepInEx/config/TimeHUD.cfg`.
 
-**Download:** [TimeHUD.dll](<Client mods/TimeHUD.dll>).
+**Download:** [TimeHUD.dll](<Host and or Client mods/TimeHUD.dll>).
 
 ### Game Time API
 
@@ -208,7 +233,7 @@ webpages, stream overlays and other tools. It does not add an in-game display by
 
 **Use:** install on the same computer as the tool using it.
 
-**Download:** [GameTime_API.dll](<Client mods/GameTime_API.dll>).
+**Download:** [GameTime_API.dll](<Host and or Client mods/GameTime_API.dll>).
 
 ### RadioAPI
 
@@ -219,7 +244,7 @@ other players just like normal radio use.
 **Use:** install on the same computer as the radio tool. It does not add an
 in-game radio interface by itself.
 
-**Download:** [RadioAPI.dll](<Client mods/RadioAPI.dll>).
+**Download:** [RadioAPI.dll](<Host and or Client mods/RadioAPI.dll>).
 
 ## Installation
 
