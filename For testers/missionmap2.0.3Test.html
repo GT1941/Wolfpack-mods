@@ -12156,7 +12156,10 @@ function tooltipForHover(hov) {
     } else {
       aobRow = `<div class="row"><span class="k">AOB setting</span><span>\u2014</span></div>`;
     }
-    const targetSpeedStr = launch.targetSpeed != null
+    // Target course as the TDC held it at launch (absolute compass course).
+    const courseRow = launch.targetCourse != null
+      ? `<div class="row"><span class="k">Target course</span><span>${(((launch.targetCourse % 360) + 360) % 360).toFixed(1)}\u00b0\u00b0</span></div>`
+      : "";    const targetSpeedStr = launch.targetSpeed != null
       ? `${launch.targetSpeed.toFixed(1)} kn` : "\u2014";
     const gyroDeg  = launch.gyro != null ? launch.gyro.toFixed(0) + "°" : "—";
     const depthM   = launch.depthSet != null ? launch.depthSet.toFixed(1) + " m" : "—";
@@ -12219,6 +12222,7 @@ function tooltipForHover(hov) {
             <div class="row"><span class="k">Type</span><span>${typeStr} · ${speedStr} · ${pistol}</span></div>
             <div class="row"><span class="k">Gyro angle</span><span>${gyroDeg}</span></div>
             ${aobRow}
+            ${courseRow}
             <div class="row"><span class="k">Target speed</span><span>${targetSpeedStr}</span></div>
             <div class="row"><span class="k">Depth setting</span><span>${depthM}</span></div>${curDepthRow}${runDepthRow}${rangeRow}`;
   }
