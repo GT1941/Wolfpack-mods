@@ -12158,7 +12158,7 @@ function tooltipForHover(hov) {
     }
     // Target course as the TDC held it at launch (absolute compass course).
     const courseRow = launch.targetCourse != null
-      ? `<div class="row"><span class="k">Target course</span><span>${(((launch.targetCourse % 360) + 360) % 360).toFixed(1)}\u00b0\u00b0</span></div>`
+      ? `<div class="row"><span class="k">Target course</span><span>${(((launch.targetCourse % 360) + 360) % 360).toFixed(1)}\u00b0</span></div>`
       : "";    const targetSpeedStr = launch.targetSpeed != null
       ? `${launch.targetSpeed.toFixed(1)} kn` : "\u2014";
     const gyroDeg  = launch.gyro != null ? launch.gyro.toFixed(0) + "°" : "—";
