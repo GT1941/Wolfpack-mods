@@ -12123,9 +12123,8 @@ function tooltipForHover(hov) {
     // The attack calculator's selected speed is the launch value users need
     // to compare against the TDC. Keep the measured speed only as a legacy
     // fallback when old recordings have no speed slot.
-    const speedStr = launch.speedSet != null
-      ? speedSlot
-      : (launch.speedKn != null ? `${launch.speedKn.toFixed(0)} kn` : "—");
+    const speedStr = launch.speedKn != null ? `${launch.speedKn.toFixed(0)} kn`
+      : (launch.speedSet != null ? speedSlot : "—");
     const pistol   = launch.magnetic ? "magnetic" : "impact";
     // New recordings tag the real attack-calculator setting as either the
     // local physical dial or a reconstruction from synced TDC inputs. Older
