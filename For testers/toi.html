@@ -1,0 +1,1011 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TOI · Fire Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #07090b;
+    --bg-2: #0c1115;
+    --panel: #11171c;
+    --panel-2: #161e25;
+    --line: #1f2a33;
+    --line-2: #2a3845;
+    --fg: #d6e4ee;
+    --dim: #5e7886;
+    --dimmer: #3a4d59;
+    --amber: #ffb84a;
+    --amber-glow: rgba(255, 184, 74, 0.18);
+    --red: #ff5a5a;
+    --red-glow: rgba(255, 90, 90, 0.18);
+    --green: #4ade80;
+    --green-glow: rgba(74, 222, 128, 0.18);
+    --cyan: #6fd3e6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% 0%, #0e1620 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 50% 100%, #0d1419 0%, transparent 70%),
+      var(--bg);
+    color: var(--fg);
+    font-family: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+    min-height: 100%;
+    font-feature-settings: "ss01", "ss02", "zero", "cv11";
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  /* subtle scanline overlay */
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.012) 0 1px,
+      transparent 1px 3px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  .console {
+    width: 100%;
+    max-width: 560px;
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%);
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.02) inset,
+      0 30px 60px -20px rgba(0,0,0,0.6),
+      0 0 80px rgba(255, 184, 74, 0.03);
+    overflow: hidden;
+  }
+
+  /* ── Header bar ─────────────────────────────────────────── */
+  .head {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.02), transparent),
+      var(--bg-2);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .badge .glyph {
+    width: 14px; height: 14px;
+    border: 1.5px solid var(--amber);
+    border-radius: 50%;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .badge .glyph::before,
+  .badge .glyph::after {
+    content: "";
+    position: absolute;
+    background: var(--amber);
+  }
+  .badge .glyph::before {
+    left: 50%; top: 1px; bottom: 1px; width: 1px;
+    transform: translateX(-50%);
+  }
+  .badge .glyph::after {
+    top: 50%; left: 1px; right: 1px; height: 1px;
+    transform: translateY(-50%);
+  }
+  .head .title {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--fg);
+    font-weight: 500;
+    text-align: center;
+  }
+  .head .title span { color: var(--dimmer); }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--dim);
+    background: rgba(0,0,0,0.25);
+    white-space: nowrap;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 8px var(--red);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .dot.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.stale { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Main grid ──────────────────────────────────────────── */
+  .body {
+    padding: 22px 20px 20px;
+    display: grid;
+    gap: 14px;
+  }
+
+  .group {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    position: relative;
+  }
+  .group::before {
+    /* corner ticks */
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(to right, var(--line-2) 8px, transparent 8px) top left/9px 1px no-repeat,
+      linear-gradient(to bottom, var(--line-2) 8px, transparent 8px) top left/1px 9px no-repeat,
+      linear-gradient(to left, var(--line-2) 8px, transparent 8px) top right/9px 1px no-repeat,
+      linear-gradient(to bottom, var(--line-2) 8px, transparent 8px) top right/1px 9px no-repeat,
+      linear-gradient(to right, var(--line-2) 8px, transparent 8px) bottom left/9px 1px no-repeat,
+      linear-gradient(to top, var(--line-2) 8px, transparent 8px) bottom left/1px 9px no-repeat,
+      linear-gradient(to left, var(--line-2) 8px, transparent 8px) bottom right/9px 1px no-repeat,
+      linear-gradient(to top, var(--line-2) 8px, transparent 8px) bottom right/1px 9px no-repeat;
+  }
+
+  .group-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px 6px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .label.amber { color: var(--amber); }
+  .group-body { padding: 14px 18px 18px; }
+
+  /* ── Now panel ──────────────────────────────────────────── */
+  .now-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .clock {
+    font-size: 52px;
+    font-weight: 300;
+    line-height: 1;
+    letter-spacing: 2px;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  .clock .sep { color: var(--dimmer); }
+  .clock .ss { color: var(--dim); font-size: 0.7em; }
+  .stale .clock,
+  .stale .clock .sep,
+  .stale .clock .ss { color: var(--dimmer); }
+
+  .now-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 22px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--line);
+  }
+  .meta-cell .label { margin-bottom: 5px; }
+  .meta-cell .v {
+    font-size: 12px;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.5px;
+  }
+  .meta-cell .v.dim { color: var(--dim); }
+
+  /* ── Input ──────────────────────────────────────────────── */
+  .input-shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .input-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 3px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input-row:focus-within {
+    border-color: var(--amber);
+    box-shadow: 0 0 0 3px var(--amber-glow);
+  }
+  .input-prefix {
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    color: var(--amber);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+    border-right: 1px solid var(--line);
+  }
+  input[type=text] {
+    flex: 1;
+    background: transparent;
+    color: var(--fg);
+    border: none;
+    font-family: inherit;
+    font-size: 24px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    padding: 12px 14px;
+    text-align: center;
+    outline: none;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type=text]::placeholder { color: var(--dimmer); }
+  .clear-btn {
+    background: transparent;
+    border: none;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 0 14px;
+    cursor: pointer;
+    border-left: 1px solid var(--line);
+    transition: color 0.15s;
+  }
+  .clear-btn:hover { color: var(--red); }
+  .clear-btn:disabled { opacity: 0; pointer-events: none; }
+  .save-btn {
+    background: transparent;
+    border: none;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 0 14px;
+    cursor: pointer;
+    border-left: 1px solid var(--line);
+    transition: color 0.15s;
+  }
+  .save-btn:hover { color: var(--amber); }
+  .save-btn:disabled { opacity: 0.25; pointer-events: none; }
+
+  /* ── Saved TOIs list ─────────────────────────────────────── */
+  .saved-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .saved-empty {
+    font-size: 10px;
+    color: var(--dimmer);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+    padding: 12px 0;
+  }
+  .saved-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .saved-row:hover {
+    border-color: var(--line-2);
+    background: rgba(255, 184, 74, 0.04);
+  }
+  .saved-time {
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 1px;
+    color: var(--amber);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .saved-time:hover { text-decoration: underline; }
+  .saved-meta {
+    font-size: 9px;
+    color: var(--dim);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .saved-meta .sep { color: var(--dimmer); margin: 0 4px; }
+  .saved-rm {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--dim);
+    border-radius: 2px;
+    width: 22px; height: 22px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.12s;
+  }
+  .saved-rm:hover { color: var(--red); border-color: var(--red); }
+  .saved-clear {
+    margin-top: 8px;
+    background: transparent;
+    border: 1px dashed var(--line);
+    color: var(--dimmer);
+    font-family: inherit;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 6px;
+    cursor: pointer;
+    border-radius: 2px;
+    width: 100%;
+    transition: all 0.12s;
+  }
+  .saved-clear:hover { color: var(--red); border-color: var(--red); border-style: solid; }
+
+  .presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .preset {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .preset:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+    background: var(--amber-glow);
+  }
+  .hint {
+    font-size: 10px;
+    color: var(--dimmer);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  /* ── Countdown ──────────────────────────────────────────── */
+  .cd-group {
+    background: linear-gradient(180deg, var(--panel-2) 0%, #0e1620 100%);
+  }
+  .cd-display {
+    text-align: center;
+    padding: 8px 0 4px;
+  }
+  .cd {
+    font-size: 80px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 4px;
+    font-variant-numeric: tabular-nums;
+    color: var(--amber);
+    text-shadow: 0 0 24px var(--amber-glow);
+    transition: color 0.2s, text-shadow 0.2s;
+  }
+  .cd .sep { color: rgba(255, 184, 74, 0.35); }
+  .cd.reached {
+    color: var(--green);
+    text-shadow: 0 0 32px var(--green-glow);
+  }
+  .cd.reached .sep { color: rgba(74, 222, 128, 0.4); }
+  .cd.imminent {
+    color: var(--red);
+    text-shadow: 0 0 32px var(--red-glow);
+    animation: flash 0.6s ease-in-out infinite;
+  }
+  .cd.imminent .sep { color: rgba(255, 90, 90, 0.4); }
+  .cd.idle {
+    color: var(--dimmer);
+    text-shadow: none;
+  }
+  .cd.idle .sep { color: #2a3845; }
+  @keyframes flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
+  /* progress bar */
+  .progress-wrap {
+    margin-top: 16px;
+    height: 6px;
+    background: #0a0f13;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--amber) 0%, #ffd07a 100%);
+    box-shadow: 0 0 8px var(--amber-glow);
+    transition: width 0.25s linear, background 0.2s;
+  }
+  .progress.reached {
+    background: linear-gradient(90deg, var(--green) 0%, #8af0a8 100%);
+  }
+  .progress.imminent {
+    background: linear-gradient(90deg, var(--red) 0%, #ff8a8a 100%);
+  }
+
+  .cd-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .cd-meta-cell {
+    text-align: center;
+  }
+  .cd-meta-cell .label { margin-bottom: 4px; }
+  .cd-meta-cell .v {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+    letter-spacing: 1px;
+  }
+  .cd-meta-cell .v.dim { color: var(--dim); }
+
+  /* ── Footer ─────────────────────────────────────────────── */
+  .foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line);
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--dimmer);
+    background: var(--bg-2);
+  }
+  .foot kbd {
+    font-family: inherit;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    padding: 1px 6px;
+    color: var(--dim);
+    font-size: 9px;
+    margin: 0 2px;
+  }
+
+  @media (max-width: 480px) {
+    .clock { font-size: 40px; }
+    .cd { font-size: 56px; letter-spacing: 2px; }
+    .head .title { font-size: 9px; letter-spacing: 2px; }
+    .now-meta { grid-template-columns: 1fr; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="console">
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <div class="head">
+    <div class="badge">
+      <span class="glyph"></span>
+      <span>FC-01</span>
+    </div>
+    <div class="title">TIME · OF · IMPACT <span>//</span> FIRE CONTROL</div>
+    <div class="status-pill">
+      <span class="dot" id="dot"></span>
+      <span id="conn">link…</span>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- ── Now ──────────────────────────────────────────────────── -->
+    <div class="group" id="nowPanel">
+      <div class="group-head">
+        <div class="label">In-game time</div>
+        <div class="label" id="missionLabel">— —</div>
+      </div>
+      <div class="group-body">
+        <div class="now-row">
+          <div class="clock" id="clock">
+            <span id="now-hh">--</span><span class="sep">:</span><span id="now-mm">--</span><span class="sep">:</span><span class="ss" id="now-ss">--</span>
+          </div>
+        </div>
+        <div class="now-meta">
+          <div class="meta-cell">
+            <div class="label">Date</div>
+            <div class="v" id="date">—</div>
+          </div>
+          <div class="meta-cell">
+            <div class="label">Vessel</div>
+            <div class="v" id="vessel">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Set TOI ──────────────────────────────────────────────── -->
+    <div class="group">
+      <div class="group-head">
+        <div class="label amber">Set time of impact</div>
+        <div class="label">HH:MM[:SS]</div>
+      </div>
+      <div class="group-body">
+        <div class="input-shell">
+          <div class="input-row">
+            <div class="input-prefix">TOI</div>
+            <input type="text" id="toi" placeholder="14:30:00" autocomplete="off" spellcheck="false" inputmode="numeric">
+            <button class="save-btn" id="saveBtn" title="Save TOI to list" aria-label="Save TOI">★</button>
+            <button class="clear-btn" id="clearBtn" title="Clear" aria-label="Clear">×</button>
+          </div>
+          <div class="presets">
+            <button class="preset" data-add="60">+1m</button>
+            <button class="preset" data-add="300">+5m</button>
+            <button class="preset" data-add="600">+10m</button>
+            <button class="preset" data-add="1800">+30m</button>
+            <button class="preset" data-add="3600">+1h</button>
+          </div>
+          <div class="hint" id="toiHint">awaiting input</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Countdown ────────────────────────────────────────────── -->
+    <div class="group cd-group">
+      <div class="group-head">
+        <div class="label amber">Time to impact</div>
+        <div class="label" id="cdStatusLabel">standby</div>
+      </div>
+      <div class="group-body">
+        <div class="cd-display">
+          <div class="cd idle" id="cd">
+            <span id="cd-hh">--</span><span class="sep">:</span><span id="cd-mm">--</span><span class="sep">:</span><span id="cd-ss">--</span>
+          </div>
+        </div>
+        <div class="progress-wrap"><div class="progress" id="progress"></div></div>
+        <div class="cd-meta">
+          <div class="cd-meta-cell">
+            <div class="label">Elapsed</div>
+            <div class="v dim" id="elapsed">—</div>
+          </div>
+          <div class="cd-meta-cell">
+            <div class="label">Total span</div>
+            <div class="v dim" id="span">—</div>
+          </div>
+          <div class="cd-meta-cell">
+            <div class="label">ETA · sec</div>
+            <div class="v dim" id="etaSec">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Saved TOIs ──────────────────────────────────────────── -->
+    <div class="group" id="savedGroup">
+      <div class="group-head">
+        <div class="label amber">Saved TOIs</div>
+        <div class="label" id="savedCountLabel">0</div>
+      </div>
+      <div class="group-body">
+        <div class="saved-list" id="savedList"></div>
+        <button class="saved-clear" id="savedClearAll" type="button" style="display:none">Clear all</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Footer ───────────────────────────────────────────────── -->
+  <div class="foot">
+    <span>endpoint <kbd>127.0.0.1:1941</kbd></span>
+    <span>poll <kbd>250ms</kbd></span>
+  </div>
+</div>
+
+<script>
+"use strict";
+const ENDPOINT = "http://127.0.0.1:1941/time";
+const POLL_MS = 250;
+const STALE_MS = 3000;
+
+const $ = id => document.getElementById(id);
+const dot = $("dot"), conn = $("conn"), nowPanel = $("nowPanel");
+const nowHH = $("now-hh"), nowMM = $("now-mm"), nowSS = $("now-ss");
+const dateEl = $("date"), vesselEl = $("vessel"), missionLabel = $("missionLabel");
+const toiInput = $("toi"), clearBtn = $("clearBtn"), saveBtn = $("saveBtn"), toiHint = $("toiHint");
+const cdEl = $("cd"), cdHH = $("cd-hh"), cdMM = $("cd-mm"), cdSS = $("cd-ss");
+const cdStatusLabel = $("cdStatusLabel"), progressEl = $("progress");
+const elapsedEl = $("elapsed"), spanEl = $("span"), etaSecEl = $("etaSec");
+const savedListEl = $("savedList"), savedCountLabel = $("savedCountLabel");
+const savedClearAllBtn = $("savedClearAll");
+
+let lastOk = 0;
+let last = null;
+// Track when TOI was set, so we can compute elapsed + span + progress
+let toiSetAtNowSec = null;  // in-game seconds when TOI was set/changed
+
+toiInput.value = localStorage.getItem("toi") || "";
+
+function rememberToiAnchor() {
+  // Anchor "elapsed" + progress from current in-game time when TOI changes
+  if (last && parseHMS(last.time) != null) {
+    toiSetAtNowSec = parseHMS(last.time);
+  } else {
+    toiSetAtNowSec = null;
+  }
+}
+
+toiInput.addEventListener("input", () => {
+  localStorage.setItem("toi", toiInput.value);
+  rememberToiAnchor();
+  render();
+});
+
+clearBtn.addEventListener("click", () => {
+  toiInput.value = "";
+  localStorage.setItem("toi", "");
+  toiSetAtNowSec = null;
+  render();
+  toiInput.focus();
+});
+
+// ─── Saved TOIs (persisted across sessions, same pattern as missionmap) ──
+// Each entry: { time: "HH:MM:SS", date: "...", vessel: "...", savedAt: epochMs }
+// Stored under fc.savedTOIs.v1. Surfaced as a clickable list so a captain
+// coming back to a new game still sees their prior call-outs and can prune
+// wrong ones with the × button.
+const SAVED_TOIS_KEY = "fc.savedTOIs.v1";
+let savedTOIs = [];
+
+function loadSavedTOIs() {
+  try {
+    const raw = localStorage.getItem(SAVED_TOIS_KEY);
+    if (!raw) { savedTOIs = []; return; }
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      savedTOIs = arr.filter(o => o && typeof o.time === "string");
+    }
+  } catch { savedTOIs = []; }
+}
+function persistSavedTOIs() {
+  try { localStorage.setItem(SAVED_TOIS_KEY, JSON.stringify(savedTOIs)); } catch { }
+}
+function addSavedTOI() {
+  const raw = toiInput.value.trim();
+  const sec = parseHMS(raw);
+  if (sec == null) return; // ignore invalid input
+  const normalized = fmtHMS(sec); // store canonical HH:MM:SS
+  // De-dupe: if the same time+vessel+date already exists, skip silently.
+  const vessel = (last && last.vessel) || "";
+  const date   = (last && last.date)   || "";
+  const dup = savedTOIs.find(t => t.time === normalized && t.vessel === vessel && t.date === date);
+  if (dup) {
+    // bump savedAt so it floats to the top of the list
+    dup.savedAt = Date.now();
+  } else {
+    savedTOIs.unshift({ time: normalized, vessel, date, savedAt: Date.now() });
+  }
+  persistSavedTOIs();
+  renderSavedTOIs();
+}
+function removeSavedTOI(idx) {
+  if (idx < 0 || idx >= savedTOIs.length) return;
+  savedTOIs.splice(idx, 1);
+  persistSavedTOIs();
+  renderSavedTOIs();
+}
+function clearAllSavedTOIs() {
+  if (!confirm(`Remove all ${savedTOIs.length} saved TOI(s)?`)) return;
+  savedTOIs = [];
+  persistSavedTOIs();
+  renderSavedTOIs();
+}
+function renderSavedTOIs() {
+  savedListEl.innerHTML = "";
+  savedCountLabel.textContent = String(savedTOIs.length);
+  if (savedTOIs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "saved-empty";
+    empty.textContent = "no saved TOIs · press ★ to save current";
+    savedListEl.appendChild(empty);
+    savedClearAllBtn.style.display = "none";
+    return;
+  }
+  savedClearAllBtn.style.display = "";
+  savedTOIs.forEach((t, idx) => {
+    const row = document.createElement("div");
+    row.className = "saved-row";
+
+    const time = document.createElement("div");
+    time.className = "saved-time";
+    time.textContent = t.time;
+    time.title = "Load into TOI input";
+    time.addEventListener("click", () => {
+      toiInput.value = t.time;
+      localStorage.setItem("toi", t.time);
+      rememberToiAnchor();
+      render();
+    });
+
+    const meta = document.createElement("div");
+    meta.className = "saved-meta";
+    const parts = [];
+    if (t.vessel) parts.push(`<span>${escapeHtml(t.vessel)}</span>`);
+    if (t.date)   parts.push(`<span>${escapeHtml(t.date)}</span>`);
+    // Fallback when GameTime hadn't filled in vessel/date at save time:
+    // show the real-time clock when it was saved so the row is always
+    // identifiable.
+    if (parts.length === 0 && t.savedAt) {
+      const d = new Date(t.savedAt);
+      const pad = n => String(n).padStart(2, "0");
+      parts.push(`<span style="color:var(--dimmer)">saved ${pad(d.getHours())}:${pad(d.getMinutes())}</span>`);
+    }
+    meta.innerHTML = parts.join('<span class="sep">·</span>');
+
+    const rm = document.createElement("button");
+    rm.className = "saved-rm";
+    rm.type = "button";
+    rm.textContent = "×";
+    rm.title = "Remove";
+    rm.addEventListener("click", () => removeSavedTOI(idx));
+
+    row.appendChild(time);
+    row.appendChild(meta);
+    row.appendChild(rm);
+    savedListEl.appendChild(row);
+  });
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
+saveBtn.addEventListener("click", addSavedTOI);
+savedClearAllBtn.addEventListener("click", clearAllSavedTOIs);
+
+// Enter key in the TOI input also saves (fast capture during play).
+toiInput.addEventListener("keydown", ev => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    addSavedTOI();
+  }
+});
+
+loadSavedTOIs();
+renderSavedTOIs();
+
+document.querySelectorAll(".preset").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const add = +btn.dataset.add;
+    const baseSec = last ? parseHMS(last.time) : null;
+    if (baseSec == null) return;
+    let target = (baseSec + add) % 86400;
+    toiInput.value = fmtHMS(target);
+    localStorage.setItem("toi", toiInput.value);
+    rememberToiAnchor();
+    render();
+  });
+});
+
+function parseHMS(s) {
+  if (!s) return null;
+  const parts = s.trim().split(":").map(p => p.trim());
+  if (parts.length < 2 || parts.length > 3) return null;
+  const h = +parts[0], m = +parts[1], sec = parts.length === 3 ? +parts[2] : 0;
+  if (![h, m, sec].every(Number.isFinite)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59 || sec < 0 || sec > 59) return null;
+  return h * 3600 + m * 60 + sec;
+}
+
+function fmtHMS(totalSec) {
+  totalSec = Math.max(0, Math.floor(totalSec));
+  totalSec = totalSec % 86400;
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = n => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+function fmtCompact(totalSec) {
+  totalSec = Math.max(0, Math.floor(totalSec));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2,"0")}m ${String(s).padStart(2,"0")}s`;
+  if (m > 0) return `${m}m ${String(s).padStart(2,"0")}s`;
+  return `${s}s`;
+}
+
+function setClock(el_h, el_m, el_s, t) {
+  if (t == null) {
+    el_h.textContent = "--"; el_m.textContent = "--"; el_s.textContent = "--";
+    return;
+  }
+  const parts = fmtHMS(t).split(":");
+  el_h.textContent = parts[0];
+  el_m.textContent = parts[1];
+  el_s.textContent = parts[2];
+}
+
+async function poll() {
+  try {
+    const r = await fetch(ENDPOINT, { cache: "no-store" });
+    if (!r.ok) throw new Error("status " + r.status);
+    const wasNull = last == null;
+    last = await r.json();
+    lastOk = Date.now();
+    if (wasNull && toiInput.value && toiSetAtNowSec == null) {
+      // First successful payload after page load with a stored TOI:
+      // anchor "elapsed" from now so the progress bar makes sense.
+      rememberToiAnchor();
+    }
+  } catch (e) {
+    // keep last value but mark stale
+  }
+  render();
+}
+
+function render() {
+  const stale = Date.now() - lastOk > STALE_MS;
+  const ok = !!last && !stale;
+
+  dot.classList.remove("ok", "stale");
+  if (ok) dot.classList.add("ok");
+  else if (last) dot.classList.add("stale");
+
+  conn.textContent = ok
+    ? (last.missionActive ? "linked · active" : "linked · idle")
+    : (last ? "stale" : "offline");
+  nowPanel.classList.toggle("stale", !ok);
+
+  missionLabel.textContent = ok
+    ? (last.missionActive ? "● MISSION ACTIVE" : "○ IDLE")
+    : "— —";
+  missionLabel.style.color = ok && last.missionActive ? "var(--green)" : "";
+
+  if (last) {
+    const nowSec = parseHMS(last.time);
+    setClock(nowHH, nowMM, nowSS, nowSec);
+    dateEl.textContent = last.date || "—";
+    vesselEl.textContent = last.vessel || "—";
+  } else {
+    setClock(nowHH, nowMM, nowSS, null);
+  }
+
+  // --- TOI / countdown ---
+  cdEl.classList.remove("reached", "passed", "imminent", "idle");
+  progressEl.classList.remove("reached", "imminent");
+
+  const toiRaw = toiInput.value;
+  const toiSec = parseHMS(toiRaw);
+  const nowSec = last ? parseHMS(last.time) : null;
+
+  // input hint
+  clearBtn.disabled = !toiRaw;
+  saveBtn.disabled = (toiSec == null);
+  if (!toiRaw) {
+    toiHint.textContent = "awaiting input";
+  } else if (toiSec == null) {
+    toiHint.textContent = "invalid · use HH:MM or HH:MM:SS";
+    toiHint.style.color = "var(--red)";
+  } else {
+    toiHint.textContent = `target ${fmtHMS(toiSec)}`;
+    toiHint.style.color = "";
+  }
+
+  if (toiSec == null || nowSec == null) {
+    setClock(cdHH, cdMM, cdSS, null);
+    cdEl.classList.add("idle");
+    cdStatusLabel.textContent = nowSec == null ? "no link" : "standby";
+    cdStatusLabel.style.color = "";
+    progressEl.style.width = "0%";
+    elapsedEl.textContent = "—";
+    spanEl.textContent = "—";
+    etaSecEl.textContent = "—";
+    return;
+  }
+
+  let diff = toiSec - nowSec;
+  if (diff < 0) diff += 86400; // wrap to next day
+
+  // Anchor span/elapsed
+  if (toiSetAtNowSec == null) toiSetAtNowSec = nowSec;
+  let span = toiSec - toiSetAtNowSec;
+  if (span < 0) span += 86400;
+  // sometimes span becomes 0 if user typed current time — guard
+  if (span <= 0) span = Math.max(diff, 1);
+  let elapsed = span - diff;
+  if (elapsed < 0) elapsed = 0;
+  const pct = Math.min(100, Math.max(0, (elapsed / span) * 100));
+
+  // Status
+  setClock(cdHH, cdMM, cdSS, diff);
+
+  if (diff === 0) {
+    cdEl.classList.add("reached");
+    progressEl.classList.add("reached");
+    cdStatusLabel.textContent = "● IMPACT";
+    cdStatusLabel.style.color = "var(--green)";
+  } else if (diff <= 10) {
+    cdEl.classList.add("imminent");
+    progressEl.classList.add("imminent");
+    cdStatusLabel.textContent = "● TERMINAL";
+    cdStatusLabel.style.color = "var(--red)";
+  } else if (diff <= 60) {
+    cdEl.classList.add("reached");
+    progressEl.classList.add("reached");
+    cdStatusLabel.textContent = "● CLOSING";
+    cdStatusLabel.style.color = "var(--green)";
+  } else {
+    cdStatusLabel.textContent = "tracking";
+    cdStatusLabel.style.color = "";
+  }
+
+  progressEl.style.width = pct.toFixed(2) + "%";
+  elapsedEl.textContent = fmtCompact(elapsed);
+  spanEl.textContent = fmtCompact(span);
+  etaSecEl.textContent = diff.toString() + "s";
+  elapsedEl.classList.remove("dim");
+  spanEl.classList.remove("dim");
+  etaSecEl.classList.remove("dim");
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
